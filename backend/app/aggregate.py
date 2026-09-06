@@ -25,6 +25,9 @@ GENERATION_SOURCES = [
     "interconnector_norway",
     "interconnector_belgium",
     "interconnector_netherlands",
+    "geothermal",
+    "tidal",
+    "morocco_link",
 ]
 
 STORAGE_DISCHARGE_SOURCES = ["battery", "other_storage"]
@@ -130,6 +133,9 @@ def build_response(gen: GenerationConfig, demand: DemandConfig) -> dict:
         "solar_panels_millions": round(
             (gen.solar_field_gw + gen.solar_roof_gw) * 1_000_000_000 / EQUIVALENTS["solar_panel_w"] / 1_000_000, 1
         ),
+        "tidal_turbines": round(gen.tidal_gw * 1000 / EQUIVALENTS["tidal_turbine_mw"]),
+        "geothermal_plants": round(gen.geothermal_gw * 1000 / EQUIVALENTS["geothermal_plant_mw"], 1),
+        "morocco_links": round(gen.morocco_link_gw / EQUIVALENTS["morocco_link_gw"], 1),
     }
 
     headline = {

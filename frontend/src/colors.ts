@@ -8,7 +8,8 @@ export type SupplyKey =
   | "gas"
   | "biomass"
   | "interconnectors"
-  | "storage";
+  | "storage"
+  | "other_renewables";
 
 interface ColorPair {
   light: string;
@@ -24,6 +25,9 @@ export const SUPPLY_COLORS: Record<SupplyKey, ColorPair> = {
   biomass: { light: "#008300", dark: "#008300" },
   interconnectors: { light: "#4a3aa7", dark: "#9085e9" },
   storage: { light: "#e34948", dark: "#e66767" },
+  // A 9th category folds into a neutral gray rather than a new saturated hue,
+  // so it stays visually distinct without needing fresh CVD validation.
+  other_renewables: { light: "#898781", dark: "#898781" },
 };
 
 export const SUPPLY_LABELS: Record<SupplyKey, string> = {
@@ -35,6 +39,7 @@ export const SUPPLY_LABELS: Record<SupplyKey, string> = {
   biomass: "Biomass",
   interconnectors: "Interconnectors",
   storage: "Storage discharge",
+  other_renewables: "Other (geothermal, tidal)",
 };
 
 export const SUPPLY_ORDER: SupplyKey[] = [
@@ -46,6 +51,7 @@ export const SUPPLY_ORDER: SupplyKey[] = [
   "biomass",
   "interconnectors",
   "storage",
+  "other_renewables",
 ];
 
 export const SEQUENTIAL_BLUE = { light: "#256abf", dark: "#3987e5" };
@@ -87,7 +93,7 @@ export function pick(pair: ColorPair, dark: boolean): string {
   return dark ? pair.dark : pair.light;
 }
 
-// Maps the backend's fine-grained source keys onto the 8 chart categories.
+// Maps the backend's fine-grained source keys onto the chart's categories.
 export function toSupplyKey(sourceKey: string): SupplyKey {
   if (sourceKey.startsWith("solar")) return "solar";
   if (sourceKey === "nuclear") return "nuclear";
@@ -95,7 +101,9 @@ export function toSupplyKey(sourceKey: string): SupplyKey {
   if (sourceKey === "wind_offshore") return "wind_offshore";
   if (sourceKey === "gas") return "gas";
   if (sourceKey === "biomass") return "biomass";
-  if (sourceKey.startsWith("interconnector")) return "interconnectors";
+  // The Morocco link is a subsea HVDC import, so it reads as an interconnector.
+  if (sourceKey.startsWith("interconnector") || sourceKey === "morocco_link") return "interconnectors";
   if (sourceKey === "battery" || sourceKey === "other_storage") return "storage";
+  if (sourceKey === "geothermal" || sourceKey === "tidal") return "other_renewables";
   return "gas";
 }

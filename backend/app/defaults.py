@@ -32,6 +32,12 @@ DEFAULT_GENERATION = GenerationConfig(
     interconnector_belgium_price=75,
     interconnector_netherlands_gw=1.0,
     interconnector_netherlands_price=75,
+    geothermal_gw=0.0,
+    geothermal_price=100,
+    tidal_gw=0.0,
+    tidal_price=140,
+    morocco_link_gw=0.0,
+    morocco_link_price=50,
     battery_gw=4.5,
     battery_price=15,
     other_storage_gw=2.8,
@@ -108,6 +114,28 @@ PRESET_NUCLEAR_RENAISSANCE = _scaled(
     other_storage_gw=5,
 )
 
+PRESET_DASH_FOR_GAS = _scaled(
+    DEFAULT_GENERATION,
+    # Everything but nuclear and gas retired - a 1990s-style "dash for gas"
+    # taken to its logical extreme, sized so gas covers ~80% of demand.
+    solar_field_gw=0,
+    solar_roof_gw=0,
+    wind_onshore_gw=0,
+    wind_offshore_gw=0,
+    biomass_gw=0,
+    interconnector_france_gw=0,
+    interconnector_norway_gw=0,
+    interconnector_belgium_gw=0,
+    interconnector_netherlands_gw=0,
+    geothermal_gw=0,
+    tidal_gw=0,
+    morocco_link_gw=0,
+    battery_gw=0,
+    other_storage_gw=0,
+    nuclear_gw=7.4,
+    gas_gw=45,
+)
+
 PRESETS = {
     "current_mix": {
         "label": "Current UK mix",
@@ -134,6 +162,15 @@ PRESETS = {
             "but a large nuclear fleet is constructed (storage still allowed)."
         ),
         "generation": PRESET_NUCLEAR_RENAISSANCE,
+    },
+    "dash_for_gas": {
+        "label": "Dash for Gas",
+        "description": (
+            "Renewables, biomass, interconnectors and storage all retired - "
+            "gas capacity is expanded so gas supplies around 80% of demand, "
+            "with existing nuclear providing the rest."
+        ),
+        "generation": PRESET_DASH_FOR_GAS,
     },
 }
 
@@ -163,6 +200,12 @@ GENERATION_SLIDER_META = {
     "interconnector_belgium_price": {"min": 10, "max": 150, "step": 1, "unit": "£/MWh"},
     "interconnector_netherlands_gw": {"min": 0, "max": 4, "step": 0.2, "unit": "GW"},
     "interconnector_netherlands_price": {"min": 10, "max": 150, "step": 1, "unit": "£/MWh"},
+    "geothermal_gw": {"min": 0, "max": 15, "step": 0.2, "unit": "GW", "note": "Enhanced geothermal (EGS) - flat baseload, not yet built at grid scale in the UK"},
+    "geothermal_price": {"min": 30, "max": 200, "step": 1, "unit": "£/MWh"},
+    "tidal_gw": {"min": 0, "max": 10, "step": 0.2, "unit": "GW", "note": "Fully predictable but follows the spring/neap tidal cycle"},
+    "tidal_price": {"min": 30, "max": 250, "step": 1, "unit": "£/MWh"},
+    "morocco_link_gw": {"min": 0, "max": 12, "step": 0.2, "unit": "GW", "note": "Subsea HVDC link importing Moroccan solar/wind + storage (Xlinks-style)"},
+    "morocco_link_price": {"min": 10, "max": 150, "step": 1, "unit": "£/MWh"},
     "battery_gw": {"min": 0, "max": 40, "step": 0.5, "unit": "GW", "note": "Assumed ~1.5h duration"},
     "battery_price": {"min": 1, "max": 80, "step": 1, "unit": "£/MWh throughput"},
     "other_storage_gw": {"min": 0, "max": 20, "step": 0.5, "unit": "GW", "note": "Assumed ~10.7h duration (pumped hydro-like)"},
@@ -183,4 +226,7 @@ EQUIVALENTS = {
     "offshore_turbine_mw": 8.0,
     "gas_plant_gw": 0.8,
     "solar_panel_w": 440.0,
+    "tidal_turbine_mw": 1.5,       # e.g. one MeyGen-class tidal stream turbine
+    "geothermal_plant_mw": 25.0,   # a modular enhanced-geothermal plant
+    "morocco_link_gw": 3.6,        # scale of one proposed Xlinks-style subsea HVDC link
 }

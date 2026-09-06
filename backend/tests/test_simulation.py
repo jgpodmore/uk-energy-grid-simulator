@@ -83,6 +83,46 @@ def test_curtailment_only_when_surplus():
     assert response["headline"]["total_curtailment_mwh"] >= 0
 
 
+def test_dash_for_gas_preset_hits_roughly_80_percent_gas():
+    response = build_response(PRESETS["dash_for_gas"]["generation"], DEFAULT_DEMAND)
+    gas_share = response["headline"]["generation_share_pct"]["gas"]
+    assert 78.0 <= gas_share <= 82.0
+    assert response["headline"]["reliability_ok"] is True
+
+
+def test_geothermal_flat_across_periods():
+    gen = DEFAULT_GENERATION.model_copy(deep=True)
+    gen.geothermal_gw = 3.0
+    periods = run_simulation(gen, DEFAULT_DEMAND)
+    geothermal_values = {round(p.supply_mwh.get("geothermal", 0.0), 3) for p in periods}
+    assert len(geothermal_values) == 1
+    assert next(iter(geothermal_values)) > 0
+
+
+def test_tidal_is_deterministic_and_bounded():
+    gen = DEFAULT_GENERATION.model_copy(deep=True)
+    gen.tidal_gw = 2.0
+    periods_a = run_simulation(gen, DEFAULT_DEMAND)
+    periods_b = run_simulation(gen, DEFAULT_DEMAND)
+    tidal_a = [p.supply_mwh.get("tidal", 0.0) for p in periods_a]
+    tidal_b = [p.supply_mwh.get("tidal", 0.0) for p in periods_b]
+    assert tidal_a == tidal_b
+    max_possible = gen.tidal_gw * 1000 * 12.0  # 100% capacity factor ceiling
+    assert all(0 <= v <= max_possible for v in tidal_a)
+    assert any(v > 0 for v in tidal_a)
+
+
+def test_morocco_link_is_dispatchable_like_interconnector():
+    gen = DEFAULT_GENERATION.model_copy(deep=True)
+    for field_name in gen.model_fields:
+        if field_name.endswith("_gw"):
+            setattr(gen, field_name, 0.0)
+    gen.morocco_link_gw = 5.0
+    gen.morocco_link_price = 10  # cheapest possible so it's guaranteed to be dispatched
+    response = build_response(gen, DEFAULT_DEMAND)
+    assert response["headline"]["generation_share_pct"]["morocco_link"] > 0
+
+
 def test_ac_demand_only_in_summer():
     from app.models import DemandConfig
     from app.simulation import build_demand_mwh

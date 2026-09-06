@@ -53,6 +53,9 @@ export default function HeadlineStats({ headline }: { headline: Headline }) {
         <span>≈ {fmtNumber(eq.offshore_turbines)} offshore turbines</span>
         <span>≈ {fmtNumber(eq.gas_plants, 1)} × 800MW gas plants</span>
         <span>≈ {fmtNumber(eq.solar_panels_millions, 1)}m solar panels</span>
+        <span>≈ {fmtNumber(eq.tidal_turbines)} tidal turbines</span>
+        <span>≈ {fmtNumber(eq.geothermal_plants, 1)} × 25MW geothermal plants</span>
+        <span>≈ {fmtNumber(eq.morocco_links, 1)} × Xlinks-scale Morocco cables</span>
       </div>
     </>
   );
