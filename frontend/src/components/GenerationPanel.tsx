@@ -86,6 +86,16 @@ export default function GenerationPanel({ generation, meta, headline, onChange }
       </div>
 
       <div className="panel-group">
+        <h2>Emerging &amp; other</h2>
+        <Field field="geothermal_gw" label="Enhanced geothermal capacity" generation={generation} meta={meta} onChange={onChange} />
+        <Field field="geothermal_price" label="Enhanced geothermal cost" generation={generation} meta={meta} onChange={onChange} />
+        <Field field="tidal_gw" label="Tidal power capacity" generation={generation} meta={meta} onChange={onChange} />
+        <Field field="tidal_price" label="Tidal power cost" generation={generation} meta={meta} onChange={onChange} />
+        <Field field="morocco_link_gw" label="Morocco solar link capacity" generation={generation} meta={meta} onChange={onChange} />
+        <Field field="morocco_link_price" label="Morocco solar link cost" generation={generation} meta={meta} onChange={onChange} />
+      </div>
+
+      <div className="panel-group">
         <h2>Storage</h2>
         <Field field="battery_gw" label="Battery power capacity" generation={generation} meta={meta} onChange={onChange} />
         <Field field="battery_price" label="Battery throughput cost" generation={generation} meta={meta} onChange={onChange} />

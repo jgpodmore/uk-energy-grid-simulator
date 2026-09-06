@@ -42,6 +42,9 @@ EMISSION_FACTORS_GCO2_PER_KWH = {
     "interconnector_norway": 20,
     "interconnector_belgium": 150,
     "interconnector_netherlands": 300,
+    "geothermal": 38,
+    "tidal": 14,
+    "morocco_link": 45,
 }
 
 # Availability factors for "always available up to capacity" dispatchable sources
@@ -52,9 +55,15 @@ DISPATCHABLE_AVAILABILITY = {
     "interconnector_norway": 0.85,
     "interconnector_belgium": 0.85,
     "interconnector_netherlands": 0.85,
+    # A single very long HVDC link - firm delivery is underpinned by
+    # co-located Moroccan solar/wind + storage, modelled like an interconnector.
+    "morocco_link": 0.85,
 }
 
 NUCLEAR_AVAILABILITY = 0.90
+# Enhanced geothermal (EGS) taps deep heat anywhere, so - like nuclear - it
+# runs as flat baseload regardless of weather or season.
+GEOTHERMAL_AVAILABILITY = 0.90
 
 GAS_EFFICIENCY = 0.50
 GAS_NON_FUEL_COST_PER_MWH = 8.0
@@ -70,8 +79,9 @@ BATTERY_EFFICIENCY = 0.88
 OTHER_STORAGE_DURATION_HOURS = 10.7
 OTHER_STORAGE_EFFICIENCY = 0.75
 
-# Curtailment priority: cheapest-to-turn-down / most-flexible first.
-CURTAILMENT_ORDER = ["wind_offshore", "wind_onshore", "solar_field", "solar_roof", "nuclear"]
+# Curtailment priority: cheapest-to-turn-down / most-flexible first. Nuclear
+# and geothermal (least flexible baseload) are curtailed last, if at all.
+CURTAILMENT_ORDER = ["wind_offshore", "wind_onshore", "tidal", "solar_field", "solar_roof", "geothermal", "nuclear"]
 
 # Merit order dispatch tie-break categories (actual order computed by price)
 DISPATCHABLE_SOURCES = [
@@ -81,6 +91,7 @@ DISPATCHABLE_SOURCES = [
     "interconnector_norway",
     "interconnector_belgium",
     "interconnector_netherlands",
+    "morocco_link",
 ]
 
 # ---------------------------------------------------------------------------
@@ -106,6 +117,7 @@ class WeatherYear:
     solar_cf_day: np.ndarray  # (365,) capacity factor during the day period, 0 at night
     wind_onshore_cf: np.ndarray  # (365, 2) [day, night]
     wind_offshore_cf: np.ndarray  # (365, 2)
+    tidal_cf: np.ndarray  # (365,) same value used for day & night - see note below
 
     @staticmethod
     def build(seed: int = _WEATHER_SEED) -> "WeatherYear":
@@ -131,10 +143,21 @@ class WeatherYear:
         wind_onshore_cf = with_noise(onshore_seasonal)
         wind_offshore_cf = with_noise(offshore_seasonal)
 
+        # Tidal: unlike wind, tidal flow is fully predictable - not random -
+        # but it isn't flat like nuclear either. It follows the ~14.77 day
+        # spring/neap cycle (bigger tides, more energy, around new/full moon).
+        # Individual high/low tides shift ~50 minutes later each day and so
+        # drift across our fixed 12h day/night split; averaged over each
+        # 12h block that drift roughly cancels out, so we apply the same
+        # spring/neap-modulated capacity factor to both periods of a day.
+        tidal_cf = 0.35 + 0.12 * np.cos(2 * np.pi * days / 14.765)
+        tidal_cf = np.clip(tidal_cf, 0.0, 0.6)
+
         return WeatherYear(
             solar_cf_day=solar_cf_day,
             wind_onshore_cf=wind_onshore_cf,
             wind_offshore_cf=wind_offshore_cf,
+            tidal_cf=tidal_cf,
         )
 
 
@@ -246,6 +269,9 @@ def effective_prices(gen: GenerationConfig) -> dict:
         "interconnector_norway": gen.interconnector_norway_price,
         "interconnector_belgium": gen.interconnector_belgium_price,
         "interconnector_netherlands": gen.interconnector_netherlands_price,
+        "geothermal": gen.geothermal_price,
+        "tidal": gen.tidal_price,
+        "morocco_link": gen.morocco_link_price,
     }
 
 
@@ -281,6 +307,11 @@ def run_simulation(gen: GenerationConfig, demand: DemandConfig) -> list[PeriodRe
             must_run_mwh["wind_onshore"] = gen.wind_onshore_gw * 1000 * HOURS_PER_PERIOD * onshore_cf
             must_run_mwh["wind_offshore"] = gen.wind_offshore_gw * 1000 * HOURS_PER_PERIOD * offshore_cf
 
+            must_run_mwh["geothermal"] = gen.geothermal_gw * 1000 * HOURS_PER_PERIOD * GEOTHERMAL_AVAILABILITY
+
+            tidal_cf = _WEATHER_YEAR.tidal_cf[day_idx]
+            must_run_mwh["tidal"] = gen.tidal_gw * 1000 * HOURS_PER_PERIOD * tidal_cf
+
             total_must_run = sum(must_run_mwh.values())
 
             supply_mwh: dict[str, float] = dict(must_run_mwh)
@@ -302,6 +333,7 @@ def run_simulation(gen: GenerationConfig, demand: DemandConfig) -> list[PeriodRe
                     "interconnector_norway": gen.interconnector_norway_gw,
                     "interconnector_belgium": gen.interconnector_belgium_gw,
                     "interconnector_netherlands": gen.interconnector_netherlands_gw,
+                    "morocco_link": gen.morocco_link_gw,
                 }
                 order = sorted(DISPATCHABLE_SOURCES, key=lambda s: prices[s])
                 remaining = residual

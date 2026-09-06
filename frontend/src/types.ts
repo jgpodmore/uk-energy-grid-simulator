@@ -21,6 +21,12 @@ export interface GenerationConfig {
   interconnector_belgium_price: number;
   interconnector_netherlands_gw: number;
   interconnector_netherlands_price: number;
+  geothermal_gw: number;
+  geothermal_price: number;
+  tidal_gw: number;
+  tidal_price: number;
+  morocco_link_gw: number;
+  morocco_link_price: number;
   battery_gw: number;
   battery_price: number;
   other_storage_gw: number;
@@ -95,6 +101,9 @@ export interface Headline {
     offshore_turbines: number;
     gas_plants: number;
     solar_panels_millions: number;
+    tidal_turbines: number;
+    geothermal_plants: number;
+    morocco_links: number;
   };
 }
 

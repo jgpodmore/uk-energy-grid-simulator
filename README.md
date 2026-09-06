@@ -25,6 +25,16 @@ The backend simulates 365 days, each split into a 12-hour "day" period and a
 - **Biomass** and four **interconnectors** (France, Norway, Belgium,
   Netherlands) are dispatched in merit order (cheapest price first) to fill
   any gap between demand and must-run generation (nuclear/wind/solar).
+- **Enhanced geothermal** (EGS) is modelled like nuclear: flat baseload,
+  unaffected by weather or season, reflecting technology that can be sited
+  almost anywhere rather than only on natural hot springs.
+- **Tidal power** is fully predictable but not flat - output follows the
+  ~14.77 day spring/neap tidal cycle (bigger tides, more power, around
+  new/full moon), generated deterministically rather than randomly like wind.
+- **The Morocco solar link** is a single very long subsea HVDC cable (styled
+  on the proposed Xlinks Morocco-UK project) that imports Moroccan
+  solar/wind + storage. It's dispatched like an interconnector, and folds
+  into the "Interconnectors" category on the charts.
 - **Batteries** (short-duration) and **other storage** (pumped-hydro-like,
   long-duration) charge from surplus generation and discharge to cover
   shortfalls, in that priority order.
@@ -39,10 +49,12 @@ All figures (capacities, costs, capacity factors, demand growth) are
 illustrative approximations of the mid-2020s UK grid for an educational
 tool - not official statistics.
 
-Three presets are included alongside the "current mix" default:
-**No fossils, no new nuclear**, **Renewables only**, and **Nuclear
-renaissance** - each a starting point you can then fine-tune with the
-sliders.
+Five presets are included alongside the "current mix" default:
+**No fossils, no new nuclear**, **Renewables only**, **Nuclear
+renaissance**, and **Dash for Gas** (renewables, biomass, interconnectors
+and storage all retired; gas capacity expanded so gas supplies ~80% of
+demand, with existing nuclear providing the rest) - each a starting point
+you can then fine-tune with the sliders.
 
 ## Project layout
 

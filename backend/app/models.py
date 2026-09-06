@@ -38,6 +38,15 @@ class GenerationConfig(BaseModel):
     interconnector_netherlands_gw: float = Field(ge=0, le=4)
     interconnector_netherlands_price: float = Field(ge=10, le=150)
 
+    geothermal_gw: float = Field(ge=0, le=15)
+    geothermal_price: float = Field(ge=30, le=200)
+
+    tidal_gw: float = Field(ge=0, le=10)
+    tidal_price: float = Field(ge=30, le=250)
+
+    morocco_link_gw: float = Field(ge=0, le=12)
+    morocco_link_price: float = Field(ge=10, le=150)
+
     battery_gw: float = Field(ge=0, le=40)
     battery_price: float = Field(ge=1, le=80)
 
