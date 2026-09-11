@@ -74,6 +74,12 @@ export default function GenerationPanel({ generation, meta, headline, onChange }
       </div>
 
       <div className="panel-group">
+        <h2>Hydro (natural flow)</h2>
+        <Field field="hydro_gw" label="Capacity" generation={generation} meta={meta} onChange={onChange} />
+        <Field field="hydro_price" label="Cost" generation={generation} meta={meta} onChange={onChange} />
+      </div>
+
+      <div className="panel-group">
         <h2>Interconnectors</h2>
         <Field field="interconnector_france_gw" label="France capacity" generation={generation} meta={meta} onChange={onChange} />
         <Field field="interconnector_france_price" label="France price" generation={generation} meta={meta} onChange={onChange} />
@@ -99,8 +105,8 @@ export default function GenerationPanel({ generation, meta, headline, onChange }
         <h2>Storage</h2>
         <Field field="battery_gw" label="Battery power capacity" generation={generation} meta={meta} onChange={onChange} />
         <Field field="battery_price" label="Battery throughput cost" generation={generation} meta={meta} onChange={onChange} />
-        <Field field="other_storage_gw" label="Pumped hydro / multiday power capacity" generation={generation} meta={meta} onChange={onChange} />
-        <Field field="other_storage_price" label="Pumped hydro / multiday throughput cost" generation={generation} meta={meta} onChange={onChange} />
+        <Field field="other_storage_gw" label="Pumped storage hydro / multiday power capacity" generation={generation} meta={meta} onChange={onChange} />
+        <Field field="other_storage_price" label="Pumped storage hydro / multiday throughput cost" generation={generation} meta={meta} onChange={onChange} />
       </div>
     </>
   );

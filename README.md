@@ -35,11 +35,18 @@ The backend simulates 365 days, each split into a 12-hour "day" period and a
   on the proposed Xlinks Morocco-UK project) that imports Moroccan
   solar/wind + storage. It's dispatched like an interconnector, and folds
   into the "Interconnectors" category on the charts.
-- **Batteries** (short-duration) and **other storage** (pumped-hydro-like,
-  long-duration) charge from surplus generation and discharge to cover
-  shortfalls, in that priority order.
+- **Hydro** (natural flow / run-of-river, not pumped storage) follows the
+  same seasonal shape as wind - more output in the wet winter months, less
+  in summer - but deterministically rather than randomly.
+- **Batteries** (short-duration) and **pumped storage hydro** (long-duration)
+  charge from surplus generation and discharge to cover shortfalls, in that
+  priority order.
 - **Curtailment** happens when surplus generation can't be absorbed by
-  storage; the curtailed generator is still paid for the lost output.
+  storage; the curtailed generator is still paid for the lost output. A
+  shortfall works the other way round: when generation, storage and imports
+  together can't cover demand, the gap shows up as unmet demand, both as a
+  headline reliability banner and as a day-by-day chart beneath the supply
+  chart.
 - **Demand** follows a seasonal baseline (higher in winter, split ~58%
   day/42% night) plus four adjustable electrification levers: heat pumps
   (winter-weighted), EVs (mostly overnight charging), industry (flat), and
