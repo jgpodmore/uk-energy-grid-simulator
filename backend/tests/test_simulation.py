@@ -179,7 +179,11 @@ def test_default_mix_matches_requested_headline_prices():
     assert gen.hydro_gw == 1.9
     assert gen.hydro_price == 80
     assert gen.other_storage_gw == 2.8
-    assert abs(headline["gas_electricity_price_per_mwh"] - 70.0) < 0.01
+    # Gas's displayed electricity price should always match the commodity-price
+    # conversion formula (50% plant efficiency + £8/MWh non-fuel cost), whatever
+    # the current default commodity price is set to.
+    expected_gas_elec_price = gen.gas_price / 0.5 + 8
+    assert abs(headline["gas_electricity_price_per_mwh"] - expected_gas_elec_price) < 0.01
     assert (
         abs(
             (headline["offshore_wind_base_price_per_mwh"] + headline["offshore_wind_distribution_cost_per_mwh"])
