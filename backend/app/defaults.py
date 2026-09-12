@@ -10,19 +10,22 @@ from __future__ import annotations
 from .models import DemandConfig, GenerationConfig, SimulationRequest
 
 DEFAULT_GENERATION = GenerationConfig(
-    solar_field_gw=10.0,
-    solar_field_price=45,
-    solar_roof_gw=7.0,
+    solar_field_gw=9.0,
+    solar_field_price=40,
+    solar_roof_gw=14.0,
     solar_roof_price=80,
     nuclear_gw=5.9,
-    nuclear_price=95,
-    wind_onshore_gw=14.5,
-    wind_onshore_price=45,
-    wind_offshore_gw=15.0,
-    wind_offshore_price=58,
-    gas_gw=32.0,
-    gas_price=25,
-    biomass_gw=4.4,
+    nuclear_price=75,
+    wind_onshore_gw=16.0,
+    wind_onshore_price=72,
+    wind_offshore_gw=17.0,
+    # 77.5 + the auto-computed grid distribution cost (~13.5/MWh at this
+    # capacity) lands close to the ~£91/MWh all-in offshore wind cost.
+    wind_offshore_price=77.5,
+    gas_gw=35.0,
+    # 67 GBP/MWh thermal -> 67/0.5 + 8 = 142 GBP/MWh electricity (wholesale).
+    gas_price=67,
+    biomass_gw=5.5,
     biomass_price=110,
     interconnector_france_gw=5.4,
     interconnector_france_price=70,
@@ -38,7 +41,10 @@ DEFAULT_GENERATION = GenerationConfig(
     tidal_price=140,
     morocco_link_gw=0.0,
     morocco_link_price=50,
-    battery_gw=4.5,
+    hydro_gw=1.9,
+    hydro_price=80,
+    # 6.7 GW * 1.5h assumed duration = ~10 GWh of battery energy capacity.
+    battery_gw=6.7,
     battery_price=15,
     other_storage_gw=2.8,
     other_storage_price=10,
@@ -108,8 +114,11 @@ PRESET_NUCLEAR_RENAISSANCE = _scaled(
     solar_roof_gw=DEFAULT_GENERATION.solar_roof_gw,
     wind_onshore_gw=DEFAULT_GENERATION.wind_onshore_gw,
     wind_offshore_gw=DEFAULT_GENERATION.wind_offshore_gw,
-    nuclear_gw=26,
-    nuclear_price=135,
+    # A genuine "renaissance" - a large new-build fleet at a price close to
+    # South Korea's KEPCO/KHNP export reactors (~£60/MWh), well below
+    # Western first-of-a-kind costs.
+    nuclear_gw=80,
+    nuclear_price=60,
     battery_gw=10,
     other_storage_gw=5,
 )
@@ -130,6 +139,7 @@ PRESET_DASH_FOR_GAS = _scaled(
     geothermal_gw=0,
     tidal_gw=0,
     morocco_link_gw=0,
+    hydro_gw=0,
     battery_gw=0,
     other_storage_gw=0,
     nuclear_gw=7.4,
@@ -182,7 +192,7 @@ GENERATION_SLIDER_META = {
     "solar_field_price": {"min": 10, "max": 150, "step": 1, "unit": "£/MWh"},
     "solar_roof_gw": {"min": 0, "max": 30, "step": 0.5, "unit": "GW", "cap_note": "Capped at estimated UK usable roof area"},
     "solar_roof_price": {"min": 10, "max": 200, "step": 1, "unit": "£/MWh"},
-    "nuclear_gw": {"min": 0, "max": 40, "step": 0.5, "unit": "GW"},
+    "nuclear_gw": {"min": 0, "max": 100, "step": 0.5, "unit": "GW"},
     "nuclear_price": {"min": 30, "max": 220, "step": 1, "unit": "£/MWh"},
     "wind_onshore_gw": {"min": 0, "max": 50, "step": 0.5, "unit": "GW"},
     "wind_onshore_price": {"min": 15, "max": 120, "step": 1, "unit": "£/MWh"},
@@ -206,6 +216,8 @@ GENERATION_SLIDER_META = {
     "tidal_price": {"min": 30, "max": 250, "step": 1, "unit": "£/MWh"},
     "morocco_link_gw": {"min": 0, "max": 12, "step": 0.2, "unit": "GW", "note": "Subsea HVDC link importing Moroccan solar/wind + storage (Xlinks-style)"},
     "morocco_link_price": {"min": 10, "max": 150, "step": 1, "unit": "£/MWh"},
+    "hydro_gw": {"min": 0, "max": 10, "step": 0.1, "unit": "GW", "note": "Natural flow / run-of-river - not pumped storage"},
+    "hydro_price": {"min": 20, "max": 150, "step": 1, "unit": "£/MWh"},
     "battery_gw": {"min": 0, "max": 40, "step": 0.5, "unit": "GW", "note": "Assumed ~1.5h duration"},
     "battery_price": {"min": 1, "max": 80, "step": 1, "unit": "£/MWh throughput"},
     "other_storage_gw": {"min": 0, "max": 20, "step": 0.5, "unit": "GW", "note": "Assumed ~10.7h duration (pumped hydro-like)"},

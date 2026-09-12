@@ -39,7 +39,7 @@ export const SUPPLY_LABELS: Record<SupplyKey, string> = {
   biomass: "Biomass",
   interconnectors: "Interconnectors",
   storage: "Storage discharge",
-  other_renewables: "Other (geothermal, tidal)",
+  other_renewables: "Other (geothermal, tidal, hydro)",
 };
 
 export const SUPPLY_ORDER: SupplyKey[] = [
@@ -104,6 +104,6 @@ export function toSupplyKey(sourceKey: string): SupplyKey {
   // The Morocco link is a subsea HVDC import, so it reads as an interconnector.
   if (sourceKey.startsWith("interconnector") || sourceKey === "morocco_link") return "interconnectors";
   if (sourceKey === "battery" || sourceKey === "other_storage") return "storage";
-  if (sourceKey === "geothermal" || sourceKey === "tidal") return "other_renewables";
+  if (sourceKey === "geothermal" || sourceKey === "tidal" || sourceKey === "hydro") return "other_renewables";
   return "gas";
 }

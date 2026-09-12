@@ -1,6 +1,8 @@
 import sys
 from pathlib import Path
 
+import pytest
+
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
 from app.aggregate import build_response
@@ -121,6 +123,77 @@ def test_morocco_link_is_dispatchable_like_interconnector():
     gen.morocco_link_price = 10  # cheapest possible so it's guaranteed to be dispatched
     response = build_response(gen, DEFAULT_DEMAND)
     assert response["headline"]["generation_share_pct"]["morocco_link"] > 0
+
+
+def test_hydro_is_deterministic_seasonal_and_bounded():
+    gen = DEFAULT_GENERATION.model_copy(deep=True)
+    gen.hydro_gw = 3.0
+    periods_a = run_simulation(gen, DEFAULT_DEMAND)
+    periods_b = run_simulation(gen, DEFAULT_DEMAND)
+    hydro_a = [p.supply_mwh.get("hydro", 0.0) for p in periods_a]
+    hydro_b = [p.supply_mwh.get("hydro", 0.0) for p in periods_b]
+    assert hydro_a == hydro_b
+    max_possible = gen.hydro_gw * 1000 * 12.0
+    assert all(0 <= v <= max_possible for v in hydro_a)
+    assert any(v > 0 for v in hydro_a)
+    # Winter (day 0) should be wetter/higher output than midsummer (day ~172).
+    assert hydro_a[0] > hydro_a[172 * 2]
+
+
+def test_nuclear_slider_allows_up_to_100gw():
+    gen = DEFAULT_GENERATION.model_copy(deep=True)
+    gen.nuclear_gw = 100.0
+    response = build_response(gen, DEFAULT_DEMAND)
+    assert response["headline"]["reliability_ok"] is True
+
+
+def test_nuclear_renaissance_preset_sized_and_priced_as_requested():
+    gen = PRESETS["nuclear_renaissance"]["generation"]
+    assert 75.0 <= gen.nuclear_gw <= 85.0
+    assert 55.0 <= gen.nuclear_price <= 65.0
+    response = build_response(gen, DEFAULT_DEMAND)
+    assert response["headline"]["reliability_ok"] is True
+    assert response["headline"]["generation_share_pct"]["nuclear"] > 90.0
+
+
+def test_default_mix_matches_requested_headline_prices():
+    gen = DEFAULT_GENERATION
+    response = build_response(gen, DEFAULT_DEMAND)
+    headline = response["headline"]
+    assert gen.wind_offshore_gw == 17.0
+    assert gen.wind_onshore_gw == 16.0
+    assert gen.solar_roof_gw == 14.0
+    assert gen.solar_field_gw == 9.0
+    assert gen.gas_gw == 35.0
+    assert gen.nuclear_gw == 5.9
+    assert gen.nuclear_price == 75
+    assert gen.biomass_gw == 5.5
+    assert gen.hydro_gw == 1.9
+    assert gen.hydro_price == 80
+    assert gen.other_storage_gw == 2.8
+    assert abs(headline["gas_electricity_price_per_mwh"] - 70.0) < 0.01
+    assert (
+        abs(
+            (headline["offshore_wind_base_price_per_mwh"] + headline["offshore_wind_distribution_cost_per_mwh"])
+            - 91.0
+        )
+        < 0.5
+    )
+    # battery_gw defaults to ~10 GWh of energy at the assumed 1.5h duration
+    assert abs(gen.battery_gw * 1.5 - 10.0) < 0.5
+
+
+def test_daily_records_expose_unmet_demand_for_shortfall_chart():
+    zero_gen = DEFAULT_GENERATION.model_copy(deep=True)
+    for field_name in zero_gen.model_fields:
+        if field_name.endswith("_gw"):
+            setattr(zero_gen, field_name, 0.0)
+    response = build_response(zero_gen, DEFAULT_DEMAND)
+    assert all("unmet_demand_mwh" in day for day in response["daily"])
+    assert all(day["unmet_demand_mwh"] > 0 for day in response["daily"])
+    assert sum(day["unmet_demand_mwh"] for day in response["daily"]) == pytest.approx(
+        response["headline"]["total_unmet_demand_mwh"], rel=0.01
+    )
 
 
 def test_ac_demand_only_in_summer():

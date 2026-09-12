@@ -27,6 +27,8 @@ export interface GenerationConfig {
   tidal_price: number;
   morocco_link_gw: number;
   morocco_link_price: number;
+  hydro_gw: number;
+  hydro_price: number;
   battery_gw: number;
   battery_price: number;
   other_storage_gw: number;

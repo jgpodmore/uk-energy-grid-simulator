@@ -11,7 +11,7 @@ class GenerationConfig(BaseModel):
     solar_roof_gw: float = Field(ge=0, le=30)
     solar_roof_price: float = Field(ge=10, le=200)
 
-    nuclear_gw: float = Field(ge=0, le=40)
+    nuclear_gw: float = Field(ge=0, le=100)
     nuclear_price: float = Field(ge=30, le=220)
 
     wind_onshore_gw: float = Field(ge=0, le=50)
@@ -46,6 +46,9 @@ class GenerationConfig(BaseModel):
 
     morocco_link_gw: float = Field(ge=0, le=12)
     morocco_link_price: float = Field(ge=10, le=150)
+
+    hydro_gw: float = Field(ge=0, le=10)
+    hydro_price: float = Field(ge=20, le=150)
 
     battery_gw: float = Field(ge=0, le=40)
     battery_price: float = Field(ge=1, le=80)

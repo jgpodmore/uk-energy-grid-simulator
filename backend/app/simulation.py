@@ -45,6 +45,7 @@ EMISSION_FACTORS_GCO2_PER_KWH = {
     "geothermal": 38,
     "tidal": 14,
     "morocco_link": 45,
+    "hydro": 10,
 }
 
 # Availability factors for "always available up to capacity" dispatchable sources
@@ -81,7 +82,16 @@ OTHER_STORAGE_EFFICIENCY = 0.75
 
 # Curtailment priority: cheapest-to-turn-down / most-flexible first. Nuclear
 # and geothermal (least flexible baseload) are curtailed last, if at all.
-CURTAILMENT_ORDER = ["wind_offshore", "wind_onshore", "tidal", "solar_field", "solar_roof", "geothermal", "nuclear"]
+CURTAILMENT_ORDER = [
+    "wind_offshore",
+    "wind_onshore",
+    "tidal",
+    "hydro",
+    "solar_field",
+    "solar_roof",
+    "geothermal",
+    "nuclear",
+]
 
 # Merit order dispatch tie-break categories (actual order computed by price)
 DISPATCHABLE_SOURCES = [
@@ -118,6 +128,7 @@ class WeatherYear:
     wind_onshore_cf: np.ndarray  # (365, 2) [day, night]
     wind_offshore_cf: np.ndarray  # (365, 2)
     tidal_cf: np.ndarray  # (365,) same value used for day & night - see note below
+    hydro_cf: np.ndarray  # (365,) same value used for day & night - river flow doesn't care about time of day
 
     @staticmethod
     def build(seed: int = _WEATHER_SEED) -> "WeatherYear":
@@ -153,11 +164,19 @@ class WeatherYear:
         tidal_cf = 0.35 + 0.12 * np.cos(2 * np.pi * days / 14.765)
         tidal_cf = np.clip(tidal_cf, 0.0, 0.6)
 
+        # Hydro (natural flow / run-of-river): output tracks rainfall and
+        # river flow, which is highest in the wet, low-evaporation winter
+        # months and lowest in summer - same seasonal shape as wind, but
+        # deterministic rather than randomly intermittent.
+        hydro_cf = _seasonal(days, peak_day=355, mean=0.40, amplitude=0.15)
+        hydro_cf = np.clip(hydro_cf, 0.1, 0.75)
+
         return WeatherYear(
             solar_cf_day=solar_cf_day,
             wind_onshore_cf=wind_onshore_cf,
             wind_offshore_cf=wind_offshore_cf,
             tidal_cf=tidal_cf,
+            hydro_cf=hydro_cf,
         )
 
 
@@ -272,6 +291,7 @@ def effective_prices(gen: GenerationConfig) -> dict:
         "geothermal": gen.geothermal_price,
         "tidal": gen.tidal_price,
         "morocco_link": gen.morocco_link_price,
+        "hydro": gen.hydro_price,
     }
 
 
@@ -311,6 +331,9 @@ def run_simulation(gen: GenerationConfig, demand: DemandConfig) -> list[PeriodRe
 
             tidal_cf = _WEATHER_YEAR.tidal_cf[day_idx]
             must_run_mwh["tidal"] = gen.tidal_gw * 1000 * HOURS_PER_PERIOD * tidal_cf
+
+            hydro_cf = _WEATHER_YEAR.hydro_cf[day_idx]
+            must_run_mwh["hydro"] = gen.hydro_gw * 1000 * HOURS_PER_PERIOD * hydro_cf
 
             total_must_run = sum(must_run_mwh.values())
 

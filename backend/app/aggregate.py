@@ -28,6 +28,7 @@ GENERATION_SOURCES = [
     "geothermal",
     "tidal",
     "morocco_link",
+    "hydro",
 ]
 
 STORAGE_DISCHARGE_SOURCES = ["battery", "other_storage"]
