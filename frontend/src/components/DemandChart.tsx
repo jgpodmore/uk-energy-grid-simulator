@@ -8,7 +8,7 @@ export default function DemandChart({ daily }: { daily: DailyRecord[] }) {
   const chrome = dark ? CHROME.dark : CHROME.light;
 
   const rows = daily.map((d) => {
-    const charge = (d.storage_charge_mwh.battery ?? 0) + (d.storage_charge_mwh.other_storage ?? 0);
+    const charge = Object.values(d.storage_charge_mwh).reduce((sum, v) => sum + v, 0);
     return {
       day: d.day,
       demand: d.demand_mwh / 1000,

@@ -11,6 +11,8 @@ from .simulation import (
     other_storage_capacity_mwh_for,
     run_simulation,
     solar_latitude_multiplier,
+    v2g_capacity_mwh_for,
+    v2g_power_mw_for,
 )
 from .models import DemandConfig
 
@@ -32,7 +34,7 @@ GENERATION_SOURCES = [
     "hydro",
 ]
 
-STORAGE_DISCHARGE_SOURCES = ["battery", "other_storage"]
+STORAGE_DISCHARGE_SOURCES = ["battery", "other_storage", "v2g"]
 ALL_SUPPLY_SERIES = GENERATION_SOURCES + STORAGE_DISCHARGE_SOURCES
 
 
@@ -53,6 +55,7 @@ def build_response(gen: GenerationConfig, demand: DemandConfig) -> dict:
 
     battery_capacity = battery_capacity_mwh_for(gen)
     other_capacity = other_storage_capacity_mwh_for(gen)
+    v2g_capacity = v2g_capacity_mwh_for(gen, demand)
 
     for day_idx in range(DAYS_PER_YEAR):
         day_period = periods[day_idx * 2]
@@ -60,7 +63,7 @@ def build_response(gen: GenerationConfig, demand: DemandConfig) -> dict:
 
         day_supply = {s: 0.0 for s in ALL_SUPPLY_SERIES}
         day_curtailment = {s: 0.0 for s in GENERATION_SOURCES}
-        day_storage_charge = {"battery": 0.0, "other_storage": 0.0}
+        day_storage_charge = {"battery": 0.0, "other_storage": 0.0, "v2g": 0.0}
         day_demand_mwh = 0.0
         day_cost = 0.0
         day_emissions_kg = 0.0
@@ -77,12 +80,10 @@ def build_response(gen: GenerationConfig, demand: DemandConfig) -> dict:
                 day_supply[s] = day_supply.get(s, 0.0) + v
                 totals_supply[s] = totals_supply.get(s, 0.0) + v
             for s, v in p.storage_discharge_mwh.items():
-                key = "battery" if s == "battery" else "other_storage"
-                day_supply[key] = day_supply.get(key, 0.0) + v
-                totals_supply[key] = totals_supply.get(key, 0.0) + v
+                day_supply[s] = day_supply.get(s, 0.0) + v
+                totals_supply[s] = totals_supply.get(s, 0.0) + v
             for s, v in p.storage_charge_mwh.items():
-                key = "battery" if s == "battery" else "other_storage"
-                day_storage_charge[key] += v
+                day_storage_charge[s] += v
             for s, v in p.curtailment_mwh.items():
                 day_curtailment[s] = day_curtailment.get(s, 0.0) + v
                 totals_curtailment[s] = totals_curtailment.get(s, 0.0) + v
@@ -101,6 +102,7 @@ def build_response(gen: GenerationConfig, demand: DemandConfig) -> dict:
                 "total_grid_load_mwh": round(day_demand_mwh + sum(day_storage_charge.values()), 1),
                 "battery_soc_pct": round(100.0 * night_period.battery_soc_mwh / battery_capacity, 1) if battery_capacity > 0 else 0.0,
                 "other_soc_pct": round(100.0 * night_period.other_soc_mwh / other_capacity, 1) if other_capacity > 0 else 0.0,
+                "v2g_soc_pct": round(100.0 * night_period.v2g_soc_mwh / v2g_capacity, 1) if v2g_capacity > 0 else 0.0,
                 "curtailment_mwh": {k: round(v, 1) for k, v in day_curtailment.items() if v > 0},
                 "curtailment_total_mwh": round(day_curtailment_mwh, 1),
                 "curtailment_payment_gbp": round(day_curtailment_payment, 2),
@@ -157,6 +159,8 @@ def build_response(gen: GenerationConfig, demand: DemandConfig) -> dict:
         "gas_electricity_price_per_mwh": round(prices["gas"], 2),
         "solar_latitude_deg": gen.solar_latitude_deg,
         "solar_latitude_multiplier": round(solar_latitude_multiplier(gen.solar_latitude_deg), 3),
+        "v2g_capacity_gwh": round(v2g_capacity / 1000.0, 2),
+        "v2g_power_gw": round(v2g_power_mw_for(gen, demand) / 1000.0, 2),
         "equivalents": equivalents,
     }
 

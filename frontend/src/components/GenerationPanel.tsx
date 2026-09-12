@@ -115,6 +115,15 @@ export default function GenerationPanel({ generation, meta, headline, solarLatit
         <Field field="battery_price" label="Battery throughput cost" generation={generation} meta={meta} onChange={onChange} />
         <Field field="other_storage_gw" label="Pumped storage hydro / multiday power capacity" generation={generation} meta={meta} onChange={onChange} />
         <Field field="other_storage_price" label="Pumped storage hydro / multiday throughput cost" generation={generation} meta={meta} onChange={onChange} />
+        <Field field="v2g_participation_pct" label="Vehicle-to-grid (V2G) participation" generation={generation} meta={meta} onChange={onChange} />
+        <Field field="v2g_price" label="Vehicle-to-grid (V2G) throughput cost" generation={generation} meta={meta} onChange={onChange} />
+        {headline && (
+          <div className="slider-note">
+            {headline.v2g_capacity_gwh > 0
+              ? `= ${headline.v2g_capacity_gwh.toFixed(0)} GWh / ${headline.v2g_power_gw.toFixed(1)} GW available from the electrified car fleet (set by the "Electrify cars / transport" demand slider)`
+              : 'No electrified cars yet - raise the "Electrify cars / transport" demand slider for V2G to have any capacity to work with'}
+          </div>
+        )}
       </div>
     </>
   );

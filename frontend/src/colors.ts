@@ -103,7 +103,7 @@ export function toSupplyKey(sourceKey: string): SupplyKey {
   if (sourceKey === "biomass") return "biomass";
   // The Morocco link is a subsea HVDC import, so it reads as an interconnector.
   if (sourceKey.startsWith("interconnector") || sourceKey === "morocco_link") return "interconnectors";
-  if (sourceKey === "battery" || sourceKey === "other_storage") return "storage";
+  if (sourceKey === "battery" || sourceKey === "other_storage" || sourceKey === "v2g") return "storage";
   if (sourceKey === "geothermal" || sourceKey === "tidal" || sourceKey === "hydro") return "other_renewables";
   return "gas";
 }

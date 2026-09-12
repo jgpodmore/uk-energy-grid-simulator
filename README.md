@@ -47,9 +47,17 @@ The backend simulates 365 days, each split into a 12-hour "day" period and a
 - **Hydro** (natural flow / run-of-river, not pumped storage) follows the
   same seasonal shape as wind - more output in the wet winter months, less
   in summer - but deterministically rather than randomly.
-- **Batteries** (short-duration) and **pumped storage hydro** (long-duration)
-  charge from surplus generation and discharge to cover shortfalls, in that
-  priority order.
+- **Batteries** (short-duration), **vehicle-to-grid (V2G)** (medium-duration),
+  and **pumped storage hydro** (long-duration) charge from surplus generation
+  and discharge to cover shortfalls, in that priority order. V2G has no
+  capacity slider of its own - its energy pool scales with the "Electrify
+  cars / transport" demand slider (the size of the electrified car fleet),
+  and a participation slider sets what share of that fleet's batteries are
+  actually available to the grid (bundling opt-in rate, plugged-in
+  availability, and allowed depth-of-discharge into one number). Its power
+  rating comes from a typical bidirectional home charger (7kW), so a car's
+  battery divided by its charger's power gives a fixed ~8.6h duration,
+  regardless of fleet size or participation.
 - **Curtailment** happens when surplus generation can't be absorbed by
   storage; the curtailed generator is still paid for the lost output. A
   shortfall works the other way round: when generation, storage and imports
