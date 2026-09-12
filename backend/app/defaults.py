@@ -50,6 +50,8 @@ DEFAULT_GENERATION = GenerationConfig(
     battery_price=15,
     other_storage_gw=2.8,
     other_storage_price=10,
+    v2g_participation_pct=0.0,
+    v2g_price=20,
 )
 
 DEFAULT_DEMAND = DemandConfig(
@@ -225,6 +227,14 @@ GENERATION_SLIDER_META = {
     "battery_price": {"min": 1, "max": 80, "step": 1, "unit": "£/MWh throughput"},
     "other_storage_gw": {"min": 0, "max": 20, "step": 0.5, "unit": "GW", "note": "Assumed ~10.7h duration (pumped hydro-like)"},
     "other_storage_price": {"min": 1, "max": 60, "step": 1, "unit": "£/MWh throughput"},
+    "v2g_participation_pct": {
+        "min": 0,
+        "max": 100,
+        "step": 1,
+        "unit": "%",
+        "note": "Share of the electrified car fleet's battery capacity actually available to the grid",
+    },
+    "v2g_price": {"min": 1, "max": 80, "step": 1, "unit": "£/MWh throughput"},
 }
 
 DEMAND_SLIDER_META = {

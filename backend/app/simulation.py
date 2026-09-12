@@ -80,6 +80,21 @@ BATTERY_EFFICIENCY = 0.88
 OTHER_STORAGE_DURATION_HOURS = 10.7
 OTHER_STORAGE_EFFICIENCY = 0.75
 
+# Vehicle-to-grid (V2G): the electrified share of the car fleet forms a large
+# but power-constrained battery pool. Its energy capacity scales with how much
+# of transport is electrified (the EV demand slider) and how much of that
+# fleet's batteries are actually available to the grid (opt-in rate, plugged-in
+# availability, allowed depth-of-discharge - all bundled into one participation
+# slider). Its power rating is derived from a per-vehicle charger rating, so
+# the resulting duration (energy/power) is a fixed physical ratio - a car's
+# battery divided by its charger's power - independent of fleet size.
+UK_CAR_FLEET_COUNT = 32_000_000  # licensed cars on UK roads, approx.
+AVERAGE_EV_BATTERY_KWH = 60.0  # typical modern BEV battery size
+V2G_CHARGER_KW = 7.0  # typical single-phase bidirectional home charger
+V2G_DURATION_HOURS = AVERAGE_EV_BATTERY_KWH / V2G_CHARGER_KW
+V2G_EFFICIENCY = 0.85  # a little lower than dedicated grid batteries
+UK_FLEET_ENERGY_MWH_AT_FULL_ELECTRIFICATION = UK_CAR_FLEET_COUNT * AVERAGE_EV_BATTERY_KWH / 1000.0
+
 # Curtailment priority: cheapest-to-turn-down / most-flexible first. Nuclear
 # and geothermal (least flexible baseload) are curtailed last, if at all.
 CURTAILMENT_ORDER = [
@@ -318,6 +333,7 @@ class PeriodResult:
     storage_discharge_mwh: dict = field(default_factory=dict)
     battery_soc_mwh: float = 0.0
     other_soc_mwh: float = 0.0
+    v2g_soc_mwh: float = 0.0
     curtailment_mwh: dict = field(default_factory=dict)
     curtailment_payment_gbp: float = 0.0
     unmet_demand_mwh: float = 0.0
@@ -357,11 +373,14 @@ def run_simulation(gen: GenerationConfig, demand: DemandConfig) -> list[PeriodRe
 
     battery_capacity_mwh = gen.battery_gw * 1000 * BATTERY_DURATION_HOURS
     other_capacity_mwh = gen.other_storage_gw * 1000 * OTHER_STORAGE_DURATION_HOURS
+    v2g_capacity_mwh = v2g_capacity_mwh_for(gen, demand)
     battery_power_mwh_per_period = gen.battery_gw * 1000 * HOURS_PER_PERIOD
     other_power_mwh_per_period = gen.other_storage_gw * 1000 * HOURS_PER_PERIOD
+    v2g_power_mwh_per_period = v2g_power_mw_for(gen, demand) * HOURS_PER_PERIOD
 
     battery_soc = battery_capacity_mwh * 0.5
     other_soc = other_capacity_mwh * 0.5
+    v2g_soc = v2g_capacity_mwh * 0.5
 
     results: list[PeriodResult] = []
 
@@ -426,7 +445,7 @@ def run_simulation(gen: GenerationConfig, demand: DemandConfig) -> list[PeriodRe
                         remaining -= take
 
                 if remaining > 1e-9:
-                    # Draw down storage: batteries first, then long-duration storage.
+                    # Draw down storage: batteries first, then V2G, then long-duration storage.
                     batt_take = min(battery_soc, battery_power_mwh_per_period, remaining) * BATTERY_EFFICIENCY
                     # discharge draws down SoC by the raw amount, delivers batt_take to grid
                     if batt_take > 0:
@@ -434,6 +453,14 @@ def run_simulation(gen: GenerationConfig, demand: DemandConfig) -> list[PeriodRe
                         battery_soc -= raw_draw
                         storage_discharge["battery"] = batt_take
                         remaining -= batt_take
+
+                if remaining > 1e-9:
+                    v2g_take = min(v2g_soc, v2g_power_mwh_per_period, remaining) * V2G_EFFICIENCY
+                    if v2g_take > 0:
+                        raw_draw = v2g_take / V2G_EFFICIENCY
+                        v2g_soc -= raw_draw
+                        storage_discharge["v2g"] = v2g_take
+                        remaining -= v2g_take
 
                 if remaining > 1e-9:
                     other_take = min(other_soc, other_power_mwh_per_period, remaining) * OTHER_STORAGE_EFFICIENCY
@@ -448,13 +475,20 @@ def run_simulation(gen: GenerationConfig, demand: DemandConfig) -> list[PeriodRe
 
             else:
                 surplus = -residual
-                # Charge storage: battery first, then other storage.
+                # Charge storage: battery first, then V2G, then other storage.
                 batt_room = max(0.0, battery_capacity_mwh - battery_soc)
                 batt_charge_raw = min(surplus, battery_power_mwh_per_period, batt_room / BATTERY_EFFICIENCY if BATTERY_EFFICIENCY > 0 else 0.0)
                 if batt_charge_raw > 0:
                     battery_soc += batt_charge_raw * BATTERY_EFFICIENCY
                     storage_charge["battery"] = batt_charge_raw
                     surplus -= batt_charge_raw
+
+                v2g_room = max(0.0, v2g_capacity_mwh - v2g_soc)
+                v2g_charge_raw = min(surplus, v2g_power_mwh_per_period, v2g_room / V2G_EFFICIENCY if V2G_EFFICIENCY > 0 else 0.0)
+                if v2g_charge_raw > 0:
+                    v2g_soc += v2g_charge_raw * V2G_EFFICIENCY
+                    storage_charge["v2g"] = v2g_charge_raw
+                    surplus -= v2g_charge_raw
 
                 other_room = max(0.0, other_capacity_mwh - other_soc)
                 other_charge_raw = min(surplus, other_power_mwh_per_period, other_room / OTHER_STORAGE_EFFICIENCY if OTHER_STORAGE_EFFICIENCY > 0 else 0.0)
@@ -486,6 +520,8 @@ def run_simulation(gen: GenerationConfig, demand: DemandConfig) -> list[PeriodRe
                 cost += storage_discharge["battery"] * gen.battery_price
             if storage_discharge.get("other_storage"):
                 cost += storage_discharge["other_storage"] * gen.other_storage_price
+            if storage_discharge.get("v2g"):
+                cost += storage_discharge["v2g"] * gen.v2g_price
             cost += curtailment_payment
 
             emissions_g = 0.0
@@ -506,6 +542,7 @@ def run_simulation(gen: GenerationConfig, demand: DemandConfig) -> list[PeriodRe
                     storage_discharge_mwh=storage_discharge,
                     battery_soc_mwh=battery_soc,
                     other_soc_mwh=other_soc,
+                    v2g_soc_mwh=v2g_soc,
                     curtailment_mwh=curtailment,
                     curtailment_payment_gbp=curtailment_payment,
                     unmet_demand_mwh=unmet,
@@ -523,3 +560,13 @@ def battery_capacity_mwh_for(gen: GenerationConfig) -> float:
 
 def other_storage_capacity_mwh_for(gen: GenerationConfig) -> float:
     return gen.other_storage_gw * 1000 * OTHER_STORAGE_DURATION_HOURS
+
+
+def v2g_capacity_mwh_for(gen: GenerationConfig, demand: DemandConfig) -> float:
+    ev_fraction = demand.ev_pct / 100.0
+    participation_fraction = gen.v2g_participation_pct / 100.0
+    return UK_FLEET_ENERGY_MWH_AT_FULL_ELECTRIFICATION * ev_fraction * participation_fraction
+
+
+def v2g_power_mw_for(gen: GenerationConfig, demand: DemandConfig) -> float:
+    return v2g_capacity_mwh_for(gen, demand) / V2G_DURATION_HOURS

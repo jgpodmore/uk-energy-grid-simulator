@@ -11,14 +11,19 @@ from app.defaults import (
     DEFAULT_GENERATION,
     PRESETS,
 )
+from app.models import DemandConfig
 from app.simulation import (
     DAYS_PER_YEAR,
     HOUSTON_LATITUDE_DEG,
     MADRID_NEW_YORK_LATITUDE_DEG,
     UK_ACTUAL_LATITUDE_DEG,
+    UK_FLEET_ENERGY_MWH_AT_FULL_ELECTRIFICATION,
+    V2G_DURATION_HOURS,
     run_simulation,
     solar_capacity_factor_profile,
     solar_latitude_multiplier,
+    v2g_capacity_mwh_for,
+    v2g_power_mw_for,
 )
 
 
@@ -250,6 +255,58 @@ def test_solar_latitude_toggle_boosts_delivered_solar_generation():
     # Same installed GW, but more delivered solar share at the sunnier latitude.
     assert solar_houston > solar_uk
     assert response_houston["headline"]["reliability_ok"] is True
+
+
+def test_v2g_capacity_scales_with_ev_adoption_and_participation():
+    gen = DEFAULT_GENERATION.model_copy(deep=True)
+    gen.v2g_participation_pct = 100.0
+    demand = DemandConfig(heat_pump_pct=0, ev_pct=100, industry_pct=0, ac_pct=0)
+
+    capacity_mwh = v2g_capacity_mwh_for(gen, demand)
+    assert capacity_mwh == pytest.approx(UK_FLEET_ENERGY_MWH_AT_FULL_ELECTRIFICATION, rel=1e-6)
+
+    # Halving either EV adoption or participation halves the available capacity.
+    half_ev = demand.model_copy(update={"ev_pct": 50})
+    assert v2g_capacity_mwh_for(gen, half_ev) == pytest.approx(capacity_mwh * 0.5, rel=1e-6)
+
+    half_participation = gen.model_copy(update={"v2g_participation_pct": 50.0})
+    assert v2g_capacity_mwh_for(half_participation, demand) == pytest.approx(capacity_mwh * 0.5, rel=1e-6)
+
+
+def test_v2g_power_capacity_duration_is_fleet_size_independent():
+    # Energy/power ratio (duration) is a fixed physical ratio (battery size /
+    # charger power) - it shouldn't change with fleet size or participation.
+    gen = DEFAULT_GENERATION.model_copy(deep=True)
+    gen.v2g_participation_pct = 35.0
+    demand = DemandConfig(heat_pump_pct=0, ev_pct=40, industry_pct=0, ac_pct=0)
+
+    capacity_mwh = v2g_capacity_mwh_for(gen, demand)
+    power_mw = v2g_power_mw_for(gen, demand)
+    assert capacity_mwh / power_mw == pytest.approx(V2G_DURATION_HOURS, rel=1e-6)
+
+
+def test_zero_ev_or_zero_participation_means_no_v2g_capacity():
+    gen = DEFAULT_GENERATION.model_copy(deep=True)
+    gen.v2g_participation_pct = 100.0
+    no_ev_demand = DemandConfig(heat_pump_pct=0, ev_pct=0, industry_pct=0, ac_pct=0)
+    assert v2g_capacity_mwh_for(gen, no_ev_demand) == 0.0
+
+    some_ev_demand = DemandConfig(heat_pump_pct=0, ev_pct=50, industry_pct=0, ac_pct=0)
+    no_participation_gen = DEFAULT_GENERATION.model_copy(update={"v2g_participation_pct": 0.0})
+    assert v2g_capacity_mwh_for(no_participation_gen, some_ev_demand) == 0.0
+
+
+def test_v2g_reduces_curtailment_and_shortfall_in_a_stressed_mix():
+    demand = DemandConfig(heat_pump_pct=0, ev_pct=60, industry_pct=0, ac_pct=0)
+    gen_with_v2g = PRESETS["renewables_only"]["generation"].model_copy(update={"v2g_participation_pct": 50.0})
+    gen_without_v2g = gen_with_v2g.model_copy(update={"v2g_participation_pct": 0.0})
+
+    response_with = build_response(gen_with_v2g, demand)
+    response_without = build_response(gen_without_v2g, demand)
+
+    assert response_with["headline"]["total_curtailment_mwh"] < response_without["headline"]["total_curtailment_mwh"]
+    assert response_with["headline"]["total_unmet_demand_mwh"] < response_without["headline"]["total_unmet_demand_mwh"]
+    assert response_with["headline"]["generation_share_pct"]["v2g"] > 0
 
 
 def test_ac_demand_only_in_summer():

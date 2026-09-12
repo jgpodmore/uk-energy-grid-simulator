@@ -60,6 +60,16 @@ class GenerationConfig(BaseModel):
     other_storage_gw: float = Field(ge=0, le=20)
     other_storage_price: float = Field(ge=1, le=60)
 
+    v2g_participation_pct: float = Field(
+        ge=0,
+        le=100,
+        description=(
+            "Share of the electrified car fleet's battery capacity actually available to the grid "
+            "(opt-in rate x plugged-in availability x allowed depth-of-discharge)"
+        ),
+    )
+    v2g_price: float = Field(ge=1, le=80)
+
 
 class DemandConfig(BaseModel):
     heat_pump_pct: float = Field(ge=0, le=100)

@@ -34,6 +34,8 @@ export interface GenerationConfig {
   battery_price: number;
   other_storage_gw: number;
   other_storage_price: number;
+  v2g_participation_pct: number;
+  v2g_price: number;
 }
 
 export interface DemandConfig {
@@ -82,6 +84,7 @@ export interface DailyRecord {
   total_grid_load_mwh: number;
   battery_soc_pct: number;
   other_soc_pct: number;
+  v2g_soc_pct: number;
   curtailment_mwh: Record<string, number>;
   curtailment_total_mwh: number;
   curtailment_payment_gbp: number;
@@ -107,6 +110,8 @@ export interface Headline {
   gas_electricity_price_per_mwh: number;
   solar_latitude_deg: number;
   solar_latitude_multiplier: number;
+  v2g_capacity_gwh: number;
+  v2g_power_gw: number;
   equivalents: {
     nuclear_reactors: number;
     onshore_turbines: number;
