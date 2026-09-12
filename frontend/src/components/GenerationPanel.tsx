@@ -1,10 +1,12 @@
-import type { GenerationConfig, Headline, SliderMeta } from "../types";
+import type { GenerationConfig, Headline, LatitudePresetInfo, SliderMeta } from "../types";
+import LatitudeToggle from "./LatitudeToggle";
 import SliderRow from "./SliderRow";
 
 interface Props {
   generation: GenerationConfig;
   meta: Record<string, SliderMeta>;
   headline: Headline | null;
+  solarLatitudePresets: Record<string, LatitudePresetInfo>;
   onChange: (field: keyof GenerationConfig, value: number) => void;
 }
 
@@ -31,7 +33,7 @@ function Field({
   );
 }
 
-export default function GenerationPanel({ generation, meta, headline, onChange }: Props) {
+export default function GenerationPanel({ generation, meta, headline, solarLatitudePresets, onChange }: Props) {
   return (
     <>
       <div className="panel-group">
@@ -40,6 +42,12 @@ export default function GenerationPanel({ generation, meta, headline, onChange }
         <Field field="solar_field_price" label="Field cost" generation={generation} meta={meta} onChange={onChange} />
         <Field field="solar_roof_gw" label="Rooftop capacity" generation={generation} meta={meta} onChange={onChange} />
         <Field field="solar_roof_price" label="Rooftop cost" generation={generation} meta={meta} onChange={onChange} />
+        <LatitudeToggle
+          value={generation.solar_latitude_deg}
+          presets={solarLatitudePresets}
+          multiplier={headline?.solar_latitude_multiplier ?? null}
+          onChange={(v) => onChange("solar_latitude_deg", v)}
+        />
       </div>
 
       <div className="panel-group">

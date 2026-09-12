@@ -8,12 +8,14 @@ statistics.
 from __future__ import annotations
 
 from .models import DemandConfig, GenerationConfig, SimulationRequest
+from .simulation import UK_ACTUAL_LATITUDE_DEG
 
 DEFAULT_GENERATION = GenerationConfig(
     solar_field_gw=9.0,
     solar_field_price=40,
     solar_roof_gw=14.0,
     solar_roof_price=80,
+    solar_latitude_deg=UK_ACTUAL_LATITUDE_DEG,
     nuclear_gw=5.9,
     nuclear_price=75,
     wind_onshore_gw=16.0,
@@ -192,6 +194,7 @@ GENERATION_SLIDER_META = {
     "solar_field_price": {"min": 10, "max": 150, "step": 1, "unit": "£/MWh"},
     "solar_roof_gw": {"min": 0, "max": 30, "step": 0.5, "unit": "GW", "cap_note": "Capped at estimated UK usable roof area"},
     "solar_roof_price": {"min": 10, "max": 200, "step": 1, "unit": "£/MWh"},
+    "solar_latitude_deg": {"min": 25, "max": 62, "step": 0.5, "unit": "°N", "note": "Toggle to compare solar output at a sunnier latitude"},
     "nuclear_gw": {"min": 0, "max": 100, "step": 0.5, "unit": "GW"},
     "nuclear_price": {"min": 30, "max": 220, "step": 1, "unit": "£/MWh"},
     "wind_onshore_gw": {"min": 0, "max": 50, "step": 0.5, "unit": "GW"},

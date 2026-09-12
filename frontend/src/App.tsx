@@ -70,7 +70,12 @@ export default function App() {
   const selectPreset = (key: string) => {
     if (!presets) return;
     setActivePreset(key);
-    setGeneration(presets[key].generation);
+    // Carry over the current solar latitude toggle - it's an independent
+    // "what if" layered on top of the generation mix, not part of the preset.
+    setGeneration((prev) => ({
+      ...presets[key].generation,
+      solar_latitude_deg: prev?.solar_latitude_deg ?? presets[key].generation.solar_latitude_deg,
+    }));
   };
 
   if (!defaults || !generation || !demand) {
@@ -89,7 +94,13 @@ export default function App() {
           Adjust how much generation comes from each source, and how much each costs, to see whether the mix would
           meet demand across a full year - and what it would cost.
         </p>
-        <GenerationPanel generation={generation} meta={defaults.generation_meta} headline={result?.headline ?? null} onChange={updateGeneration} />
+        <GenerationPanel
+          generation={generation}
+          meta={defaults.generation_meta}
+          headline={result?.headline ?? null}
+          solarLatitudePresets={defaults.solar_latitude_presets}
+          onChange={updateGeneration}
+        />
         <DemandPanel demand={demand} meta={defaults.demand_meta} onChange={updateDemand} />
       </aside>
 

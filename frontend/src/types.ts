@@ -3,6 +3,7 @@ export interface GenerationConfig {
   solar_field_price: number;
   solar_roof_gw: number;
   solar_roof_price: number;
+  solar_latitude_deg: number;
   nuclear_gw: number;
   nuclear_price: number;
   wind_onshore_gw: number;
@@ -51,11 +52,18 @@ export interface SliderMeta {
   cap_note?: string;
 }
 
+export interface LatitudePresetInfo {
+  label: string;
+  sublabel: string;
+  value: number;
+}
+
 export interface DefaultsResponse {
   generation: GenerationConfig;
   demand: DemandConfig;
   generation_meta: Record<string, SliderMeta>;
   demand_meta: Record<string, SliderMeta>;
+  solar_latitude_presets: Record<string, LatitudePresetInfo>;
 }
 
 export interface PresetInfo {
@@ -97,6 +105,8 @@ export interface Headline {
   offshore_wind_distribution_cost_per_mwh: number;
   offshore_wind_base_price_per_mwh: number;
   gas_electricity_price_per_mwh: number;
+  solar_latitude_deg: number;
+  solar_latitude_multiplier: number;
   equivalents: {
     nuclear_reactors: number;
     onshore_turbines: number;

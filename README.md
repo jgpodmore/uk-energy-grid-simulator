@@ -12,7 +12,16 @@ The backend simulates 365 days, each split into a 12-hour "day" period and a
 
 - **Solar** (field + rooftop) only generates during the day, with a fixed
   seasonal profile (much more in summer than winter). Rooftop is capped at an
-  estimate of usable UK roof area.
+  estimate of usable UK roof area. A latitude toggle lets you compare the
+  UK's actual latitude (~51.5°N) against the latitude of Madrid/New York
+  (~40°N) or Houston (~30°N) - the same installed panels deliver more energy
+  at a lower latitude, both because of a higher midday sun angle and,
+  especially, a much smaller winter slump. This is derived from the standard
+  astronomical formula for daily extraterrestrial irradiation (solar
+  declination + day-length/sun-angle integral), so it captures the pure
+  geometric effect of latitude only - it deliberately excludes the extra
+  boost Madrid/Houston get in reality from being drier and less cloudy than
+  the UK, consistent with solar's "ignore weather" simplification elsewhere.
 - **Nuclear** generates flat output year-round, day and night.
 - **Onshore/offshore wind** use seasonal average wind capacity factors (higher
   in winter) plus day-to-day intermittency, generated once from a fixed random
