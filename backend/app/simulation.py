@@ -124,7 +124,6 @@ class WeatherYear:
     affect results, exactly as if we simulated the same weather year twice.
     """
 
-    solar_cf_day: np.ndarray  # (365,) capacity factor during the day period, 0 at night
     wind_onshore_cf: np.ndarray  # (365, 2) [day, night]
     wind_offshore_cf: np.ndarray  # (365, 2)
     tidal_cf: np.ndarray  # (365,) same value used for day & night - see note below
@@ -134,11 +133,6 @@ class WeatherYear:
     def build(seed: int = _WEATHER_SEED) -> "WeatherYear":
         days = np.arange(DAYS_PER_YEAR)
         rng = np.random.default_rng(seed)
-
-        # Solar: peaks day ~172 (midsummer), trough ~355 (midwinter). No weather
-        # noise - "ignore weather, fixed per day" as specified.
-        solar_cf_day = _seasonal(days, peak_day=172, mean=0.175, amplitude=0.125)
-        solar_cf_day = np.clip(solar_cf_day, 0.02, 0.4)
 
         # Wind: seasonal mean capacity factor, peaking in winter (day ~355),
         # plus day-to-day intermittency noise (independently for day/night).
@@ -172,7 +166,6 @@ class WeatherYear:
         hydro_cf = np.clip(hydro_cf, 0.1, 0.75)
 
         return WeatherYear(
-            solar_cf_day=solar_cf_day,
             wind_onshore_cf=wind_onshore_cf,
             wind_offshore_cf=wind_offshore_cf,
             tidal_cf=tidal_cf,
@@ -181,6 +174,68 @@ class WeatherYear:
 
 
 _WEATHER_YEAR = WeatherYear.build()
+
+
+# ---------------------------------------------------------------------------
+# Solar geometry: capacity factor as a function of latitude
+# ---------------------------------------------------------------------------
+#
+# Solar's seasonal profile above was tuned to the UK's actual latitude. To
+# let users compare against a sunnier latitude (e.g. "what if Britain were
+# where Madrid or Houston are?"), we derive the day/latitude dependent
+# capacity factor from the standard astronomical formula for daily
+# extraterrestrial irradiation (Cooper's equation for solar declination,
+# then the daylength/sun-angle integral - the same geometry behind any solar
+# resource textbook). This isolates the pure "latitude effect" - a lower
+# latitude gets a higher midday sun angle and, especially, much less of a
+# winter slump - while deliberately still ignoring weather/cloud cover, for
+# consistency with solar's "ignore weather, fixed per day" simplification
+# above. Real Madrid/Houston are also sunnier than this because they're
+# drier and less cloudy than the UK - this only captures the geometric part.
+
+UK_ACTUAL_LATITUDE_DEG = 51.5  # London - the UK's "actual" reference latitude
+MADRID_NEW_YORK_LATITUDE_DEG = 40.0
+HOUSTON_LATITUDE_DEG = 30.0
+
+SOLAR_LATITUDE_PRESETS = {
+    "actual": {"label": "Actual UK latitude", "sublabel": "~51.5°N, London", "value": UK_ACTUAL_LATITUDE_DEG},
+    "madrid_nyc": {"label": "Madrid / New York latitude", "sublabel": "~40°N", "value": MADRID_NEW_YORK_LATITUDE_DEG},
+    "houston": {"label": "Houston latitude", "sublabel": "~30°N", "value": HOUSTON_LATITUDE_DEG},
+}
+
+# The mean capacity factor solar was originally hand-tuned to at the UK's
+# actual latitude - used to calibrate the astronomical model onto the same
+# scale, so "actual" behaves exactly as it always has.
+_SOLAR_CF_MEAN_AT_UK_LATITUDE = 0.175
+
+
+def _relative_extraterrestrial_irradiance(latitude_deg: float, days: np.ndarray) -> np.ndarray:
+    declination_deg = 23.45 * np.sin(np.deg2rad(360.0 / DAYS_PER_YEAR * (284 + days)))
+    phi = np.deg2rad(latitude_deg)
+    delta = np.deg2rad(declination_deg)
+    cos_sunset_angle = np.clip(-np.tan(phi) * np.tan(delta), -1.0, 1.0)
+    sunset_angle = np.arccos(cos_sunset_angle)
+    return sunset_angle * np.sin(phi) * np.sin(delta) + np.cos(phi) * np.cos(delta) * np.sin(sunset_angle)
+
+
+_SOLAR_CF_CALIBRATION = _SOLAR_CF_MEAN_AT_UK_LATITUDE / _relative_extraterrestrial_irradiance(
+    UK_ACTUAL_LATITUDE_DEG, np.arange(DAYS_PER_YEAR)
+).mean()
+
+
+def solar_capacity_factor_profile(latitude_deg: float) -> np.ndarray:
+    """Daytime solar capacity factor for each of the 365 days, at the given latitude."""
+    days = np.arange(DAYS_PER_YEAR)
+    cf = _SOLAR_CF_CALIBRATION * _relative_extraterrestrial_irradiance(latitude_deg, days)
+    return np.clip(cf, 0.02, 0.45)
+
+
+def solar_latitude_multiplier(latitude_deg: float) -> float:
+    """How much more (or less) annual solar output a panel would deliver at this
+    latitude versus the UK's actual latitude, from geometry alone."""
+    at_latitude = solar_capacity_factor_profile(latitude_deg).mean()
+    at_uk = solar_capacity_factor_profile(UK_ACTUAL_LATITUDE_DEG).mean()
+    return at_latitude / at_uk
 
 
 # ---------------------------------------------------------------------------
@@ -298,6 +353,7 @@ def effective_prices(gen: GenerationConfig) -> dict:
 def run_simulation(gen: GenerationConfig, demand: DemandConfig) -> list[PeriodResult]:
     prices = effective_prices(gen)
     day_demand_mwh, night_demand_mwh = build_demand_mwh(demand)
+    solar_cf_profile = solar_capacity_factor_profile(gen.solar_latitude_deg)
 
     battery_capacity_mwh = gen.battery_gw * 1000 * BATTERY_DURATION_HOURS
     other_capacity_mwh = gen.other_storage_gw * 1000 * OTHER_STORAGE_DURATION_HOURS
@@ -317,7 +373,7 @@ def run_simulation(gen: GenerationConfig, demand: DemandConfig) -> list[PeriodRe
             must_run_mwh = {}
             must_run_mwh["nuclear"] = gen.nuclear_gw * 1000 * HOURS_PER_PERIOD * NUCLEAR_AVAILABILITY
 
-            solar_cf = _WEATHER_YEAR.solar_cf_day[day_idx] if is_day else 0.0
+            solar_cf = solar_cf_profile[day_idx] if is_day else 0.0
             must_run_mwh["solar_field"] = gen.solar_field_gw * 1000 * HOURS_PER_PERIOD * solar_cf
             must_run_mwh["solar_roof"] = gen.solar_roof_gw * 1000 * HOURS_PER_PERIOD * solar_cf
 

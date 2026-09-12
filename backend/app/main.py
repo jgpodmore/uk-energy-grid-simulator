@@ -12,6 +12,7 @@ from .defaults import (
     PRESETS,
 )
 from .models import SimulationRequest
+from .simulation import SOLAR_LATITUDE_PRESETS
 
 app = FastAPI(title="UK Energy Grid Simulator API")
 
@@ -30,6 +31,7 @@ def get_defaults():
         "demand": DEFAULT_DEMAND.model_dump(),
         "generation_meta": GENERATION_SLIDER_META,
         "demand_meta": DEMAND_SLIDER_META,
+        "solar_latitude_presets": SOLAR_LATITUDE_PRESETS,
     }
 
 

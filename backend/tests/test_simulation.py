@@ -11,7 +11,15 @@ from app.defaults import (
     DEFAULT_GENERATION,
     PRESETS,
 )
-from app.simulation import DAYS_PER_YEAR, run_simulation
+from app.simulation import (
+    DAYS_PER_YEAR,
+    HOUSTON_LATITUDE_DEG,
+    MADRID_NEW_YORK_LATITUDE_DEG,
+    UK_ACTUAL_LATITUDE_DEG,
+    run_simulation,
+    solar_capacity_factor_profile,
+    solar_latitude_multiplier,
+)
 
 
 def test_run_simulation_length():
@@ -171,7 +179,11 @@ def test_default_mix_matches_requested_headline_prices():
     assert gen.hydro_gw == 1.9
     assert gen.hydro_price == 80
     assert gen.other_storage_gw == 2.8
-    assert abs(headline["gas_electricity_price_per_mwh"] - 70.0) < 0.01
+    # Gas's displayed electricity price should always match the commodity-price
+    # conversion formula (50% plant efficiency + £8/MWh non-fuel cost), whatever
+    # the current default commodity price is set to.
+    expected_gas_elec_price = gen.gas_price / 0.5 + 8
+    assert abs(headline["gas_electricity_price_per_mwh"] - expected_gas_elec_price) < 0.01
     assert (
         abs(
             (headline["offshore_wind_base_price_per_mwh"] + headline["offshore_wind_distribution_cost_per_mwh"])
@@ -194,6 +206,50 @@ def test_daily_records_expose_unmet_demand_for_shortfall_chart():
     assert sum(day["unmet_demand_mwh"] for day in response["daily"]) == pytest.approx(
         response["headline"]["total_unmet_demand_mwh"], rel=0.01
     )
+
+
+def test_solar_latitude_multiplier_is_one_at_actual_uk_latitude():
+    assert solar_latitude_multiplier(UK_ACTUAL_LATITUDE_DEG) == pytest.approx(1.0, abs=1e-6)
+
+
+def test_lower_latitude_increases_solar_output():
+    uk_cf = solar_capacity_factor_profile(UK_ACTUAL_LATITUDE_DEG)
+    madrid_cf = solar_capacity_factor_profile(MADRID_NEW_YORK_LATITUDE_DEG)
+    houston_cf = solar_capacity_factor_profile(HOUSTON_LATITUDE_DEG)
+
+    # Annual mean output should increase monotonically as latitude drops.
+    assert uk_cf.mean() < madrid_cf.mean() < houston_cf.mean()
+
+    # Winter (low sun, short days at high latitude) should improve the most.
+    winter_day = 355
+    summer_day = 172
+    winter_gain_madrid = madrid_cf[winter_day] / uk_cf[winter_day]
+    summer_gain_madrid = madrid_cf[summer_day] / uk_cf[summer_day]
+    assert winter_gain_madrid > summer_gain_madrid > 1.0
+
+    assert solar_latitude_multiplier(MADRID_NEW_YORK_LATITUDE_DEG) == pytest.approx(1.18, abs=0.05)
+    assert solar_latitude_multiplier(HOUSTON_LATITUDE_DEG) == pytest.approx(1.32, abs=0.05)
+
+
+def test_solar_latitude_toggle_boosts_delivered_solar_generation():
+    gen_uk = DEFAULT_GENERATION.model_copy(deep=True)
+    gen_houston = DEFAULT_GENERATION.model_copy(deep=True)
+    gen_houston.solar_latitude_deg = HOUSTON_LATITUDE_DEG
+
+    response_uk = build_response(gen_uk, DEFAULT_DEMAND)
+    response_houston = build_response(gen_houston, DEFAULT_DEMAND)
+
+    solar_uk = (
+        response_uk["headline"]["generation_share_pct"]["solar_field"]
+        + response_uk["headline"]["generation_share_pct"]["solar_roof"]
+    )
+    solar_houston = (
+        response_houston["headline"]["generation_share_pct"]["solar_field"]
+        + response_houston["headline"]["generation_share_pct"]["solar_roof"]
+    )
+    # Same installed GW, but more delivered solar share at the sunnier latitude.
+    assert solar_houston > solar_uk
+    assert response_houston["headline"]["reliability_ok"] is True
 
 
 def test_ac_demand_only_in_summer():

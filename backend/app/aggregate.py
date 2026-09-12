@@ -10,6 +10,7 @@ from .simulation import (
     effective_prices,
     other_storage_capacity_mwh_for,
     run_simulation,
+    solar_latitude_multiplier,
 )
 from .models import DemandConfig
 
@@ -154,6 +155,8 @@ def build_response(gen: GenerationConfig, demand: DemandConfig) -> dict:
         "offshore_wind_distribution_cost_per_mwh": round(prices["wind_offshore_distribution"], 2),
         "offshore_wind_base_price_per_mwh": round(prices["wind_offshore_base"], 2),
         "gas_electricity_price_per_mwh": round(prices["gas"], 2),
+        "solar_latitude_deg": gen.solar_latitude_deg,
+        "solar_latitude_multiplier": round(solar_latitude_multiplier(gen.solar_latitude_deg), 3),
         "equivalents": equivalents,
     }
 

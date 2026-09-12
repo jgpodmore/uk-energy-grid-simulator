@@ -11,6 +11,10 @@ class GenerationConfig(BaseModel):
     solar_roof_gw: float = Field(ge=0, le=30)
     solar_roof_price: float = Field(ge=10, le=200)
 
+    solar_latitude_deg: float = Field(
+        ge=25, le=62, description="Assumed latitude for solar geometry - toggle to compare against the UK's actual latitude"
+    )
+
     nuclear_gw: float = Field(ge=0, le=100)
     nuclear_price: float = Field(ge=30, le=220)
 
