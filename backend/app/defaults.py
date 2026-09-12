@@ -25,8 +25,8 @@ DEFAULT_GENERATION = GenerationConfig(
     # capacity) lands close to the ~£91/MWh all-in offshore wind cost.
     wind_offshore_price=77.5,
     gas_gw=35.0,
-    # 31 GBP/MWh thermal -> 31/0.5 + 8 = 70 GBP/MWh electricity (wholesale).
-    gas_price=31,
+    # 67 GBP/MWh thermal -> 67/0.5 + 8 = 142 GBP/MWh electricity (wholesale).
+    gas_price=67,
     biomass_gw=5.5,
     biomass_price=110,
     interconnector_france_gw=5.4,
