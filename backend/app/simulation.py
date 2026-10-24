@@ -446,27 +446,36 @@ def run_simulation(gen: GenerationConfig, demand: DemandConfig) -> list[PeriodRe
 
                 if remaining > 1e-9:
                     # Draw down storage: batteries first, then V2G, then long-duration storage.
-                    batt_take = min(battery_soc, battery_power_mwh_per_period, remaining) * BATTERY_EFFICIENCY
-                    # discharge draws down SoC by the raw amount, delivers batt_take to grid
+                    # The power rating caps the grid-facing (delivered) flow - the same side
+                    # the charge path below caps - so a power-limited battery still delivers
+                    # its full rated power; efficiency only grows the SoC drawn down to supply it.
+                    #
+                    # Note: at the current duration constants (all well under
+                    # HOURS_PER_PERIOD), the power-rating term in each min()
+                    # below is never actually the binding one for discharge -
+                    # a full charge always empties before the power cap would
+                    # bite (see test_discharge_power_rating_is_never_the_
+                    # binding_constraint_given_current_durations). It's kept
+                    # here because it's still correct and becomes relevant if
+                    # HOURS_PER_PERIOD ever shrinks (e.g. hourly resolution)
+                    # or a storage type gets a much longer duration.
+                    batt_take = min(remaining, battery_power_mwh_per_period, battery_soc * BATTERY_EFFICIENCY)
                     if batt_take > 0:
-                        raw_draw = batt_take / BATTERY_EFFICIENCY
-                        battery_soc -= raw_draw
+                        battery_soc -= batt_take / BATTERY_EFFICIENCY
                         storage_discharge["battery"] = batt_take
                         remaining -= batt_take
 
                 if remaining > 1e-9:
-                    v2g_take = min(v2g_soc, v2g_power_mwh_per_period, remaining) * V2G_EFFICIENCY
+                    v2g_take = min(remaining, v2g_power_mwh_per_period, v2g_soc * V2G_EFFICIENCY)
                     if v2g_take > 0:
-                        raw_draw = v2g_take / V2G_EFFICIENCY
-                        v2g_soc -= raw_draw
+                        v2g_soc -= v2g_take / V2G_EFFICIENCY
                         storage_discharge["v2g"] = v2g_take
                         remaining -= v2g_take
 
                 if remaining > 1e-9:
-                    other_take = min(other_soc, other_power_mwh_per_period, remaining) * OTHER_STORAGE_EFFICIENCY
+                    other_take = min(remaining, other_power_mwh_per_period, other_soc * OTHER_STORAGE_EFFICIENCY)
                     if other_take > 0:
-                        raw_draw = other_take / OTHER_STORAGE_EFFICIENCY
-                        other_soc -= raw_draw
+                        other_soc -= other_take / OTHER_STORAGE_EFFICIENCY
                         storage_discharge["other_storage"] = other_take
                         remaining -= other_take
 

@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import os
+
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
@@ -16,9 +18,24 @@ from .simulation import SOLAR_LATITUDE_PRESETS
 
 app = FastAPI(title="UK Energy Grid Simulator API")
 
+
+def parse_allowed_origins(value: str | None) -> list[str]:
+    """Comma-separated ALLOWED_ORIGINS -> a CORS origin list, defaulting to
+    wide open (matching this app's original behaviour - there's no auth or
+    user data here, just a stateless calculator). For a production
+    deployment on a known domain, set ALLOWED_ORIGINS to e.g.
+    "https://example.com,https://www.example.com" to stop other sites
+    embedding this API in their own frontend.
+    """
+    if not value:
+        return ["*"]
+    origins = [o.strip() for o in value.split(",") if o.strip()]
+    return origins or ["*"]
+
+
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],
+    allow_origins=parse_allowed_origins(os.environ.get("ALLOWED_ORIGINS")),
     allow_methods=["*"],
     allow_headers=["*"],
 )
