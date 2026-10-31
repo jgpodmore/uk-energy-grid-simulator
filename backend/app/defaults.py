@@ -147,7 +147,7 @@ PRESET_DASH_FOR_GAS = _scaled(
     battery_gw=0,
     other_storage_gw=0,
     nuclear_gw=7.4,
-    gas_gw=45,
+    gas_gw=52,
 )
 
 PRESETS = {
@@ -203,7 +203,7 @@ GENERATION_SLIDER_META = {
     "wind_onshore_price": {"min": 15, "max": 120, "step": 1, "unit": "£/MWh"},
     "wind_offshore_gw": {"min": 0, "max": 120, "step": 0.5, "unit": "GW"},
     "wind_offshore_price": {"min": 20, "max": 150, "step": 1, "unit": "£/MWh (before grid distribution)"},
-    "gas_gw": {"min": 0, "max": 45, "step": 0.5, "unit": "GW"},
+    "gas_gw": {"min": 0, "max": 55, "step": 0.5, "unit": "GW"},
     "gas_price": {"min": 5, "max": 180, "step": 1, "unit": "£/MWh thermal (fuel commodity)"},
     "biomass_gw": {"min": 0, "max": 10, "step": 0.2, "unit": "GW"},
     "biomass_price": {"min": 30, "max": 180, "step": 1, "unit": "£/MWh"},
