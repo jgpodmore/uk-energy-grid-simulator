@@ -23,6 +23,7 @@ export default function App() {
   const [error, setError] = useState<string | null>(null);
 
   const debounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const abortRef = useRef<AbortController | null>(null);
 
   useEffect(() => {
     (async () => {
@@ -41,15 +42,22 @@ export default function App() {
   const runSimulation = useCallback((gen: GenerationConfig, dem: DemandConfig) => {
     if (debounceRef.current) clearTimeout(debounceRef.current);
     debounceRef.current = setTimeout(async () => {
+      // Cancel any still-in-flight request so a slow earlier response can't
+      // land after (and overwrite the chart with) a newer one's result.
+      abortRef.current?.abort();
+      const controller = new AbortController();
+      abortRef.current = controller;
+
       setLoading(true);
       try {
-        const res = await simulate(gen, dem);
+        const res = await simulate(gen, dem, controller.signal);
         setResult(res);
         setError(null);
       } catch (e) {
+        if (e instanceof DOMException && e.name === "AbortError") return;
         setError(e instanceof Error ? e.message : "Simulation failed");
       } finally {
-        setLoading(false);
+        if (abortRef.current === controller) setLoading(false);
       }
     }, 200);
   }, []);

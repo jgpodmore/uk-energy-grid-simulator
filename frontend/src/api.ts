@@ -14,11 +14,16 @@ export async function fetchPresets(): Promise<PresetsResponse> {
   return res.json();
 }
 
-export async function simulate(generation: GenerationConfig, demand: DemandConfig): Promise<SimulationResponse> {
+export async function simulate(
+  generation: GenerationConfig,
+  demand: DemandConfig,
+  signal?: AbortSignal
+): Promise<SimulationResponse> {
   const res = await fetch(`${BASE}/simulate`, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({ generation, demand }),
+    signal,
   });
   if (!res.ok) {
     const text = await res.text();

@@ -98,6 +98,9 @@ pip install -r requirements.txt
 uvicorn app.main:app --reload --port 8000
 ```
 
+`--reload` is a development convenience (it watches source files and restarts
+on change) - see "Deploying" below for a production launch command.
+
 Run the test suite with `pytest` from the `backend/` directory.
 
 ### Frontend
@@ -121,3 +124,29 @@ npm run build
 
 Serve the built `frontend/dist` behind any static host, with the FastAPI app
 reachable at `/api`.
+
+## Deploying
+
+```bash
+cd backend
+uvicorn app.main:app --host 0.0.0.0 --port 8000 --workers 4
+```
+
+Don't use `--reload` in production - it adds file-watching overhead and is
+meant for local development only. Pick a worker count suited to the host
+(the simulation itself is cheap - a few hundred milliseconds per request - so
+this is about handling concurrent requests, not CPU-bound work per request).
+
+Two things worth setting explicitly for a public deployment:
+
+- **CORS**: the API allows all origins (`*`) by default, since there's no
+  auth or user data here - just a stateless calculator. Set the
+  `ALLOWED_ORIGINS` environment variable to a comma-separated list (e.g.
+  `https://example.com,https://www.example.com`) to restrict which sites can
+  call it from a browser.
+- **Reverse proxy**: the frontend calls the backend at the relative path
+  `/api`, which only works if your deployment routes that path to the
+  backend (e.g. an nginx `location /api { proxy_pass ... }` block, or a
+  platform's built-in path-based routing). If frontend and backend are
+  deployed to entirely separate origins without such a proxy, requests to
+  `/api/*` will 404.

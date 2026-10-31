@@ -14,11 +14,17 @@ from app.defaults import (
 from app.models import DemandConfig
 from app.simulation import (
     DAYS_PER_YEAR,
+    BATTERY_DURATION_HOURS,
+    BATTERY_EFFICIENCY,
     HOUSTON_LATITUDE_DEG,
+    HOURS_PER_PERIOD,
     MADRID_NEW_YORK_LATITUDE_DEG,
+    OTHER_STORAGE_DURATION_HOURS,
+    OTHER_STORAGE_EFFICIENCY,
     UK_ACTUAL_LATITUDE_DEG,
     UK_FLEET_ENERGY_MWH_AT_FULL_ELECTRIFICATION,
     V2G_DURATION_HOURS,
+    V2G_EFFICIENCY,
     run_simulation,
     solar_capacity_factor_profile,
     solar_latitude_multiplier,
@@ -77,7 +83,7 @@ def test_headline_cost_positive():
 
 def test_zero_capacity_everything_gives_full_unmet_demand():
     zero_gen = DEFAULT_GENERATION.model_copy(deep=True)
-    for field_name in zero_gen.model_fields:
+    for field_name in type(zero_gen).model_fields:
         if field_name.endswith("_gw"):
             setattr(zero_gen, field_name, 0.0)
     response = build_response(zero_gen, DEFAULT_DEMAND)
@@ -129,7 +135,7 @@ def test_tidal_is_deterministic_and_bounded():
 
 def test_morocco_link_is_dispatchable_like_interconnector():
     gen = DEFAULT_GENERATION.model_copy(deep=True)
-    for field_name in gen.model_fields:
+    for field_name in type(gen).model_fields:
         if field_name.endswith("_gw"):
             setattr(gen, field_name, 0.0)
     gen.morocco_link_gw = 5.0
@@ -202,7 +208,7 @@ def test_default_mix_matches_requested_headline_prices():
 
 def test_daily_records_expose_unmet_demand_for_shortfall_chart():
     zero_gen = DEFAULT_GENERATION.model_copy(deep=True)
-    for field_name in zero_gen.model_fields:
+    for field_name in type(zero_gen).model_fields:
         if field_name.endswith("_gw"):
             setattr(zero_gen, field_name, 0.0)
     response = build_response(zero_gen, DEFAULT_DEMAND)
@@ -307,6 +313,73 @@ def test_v2g_reduces_curtailment_and_shortfall_in_a_stressed_mix():
     assert response_with["headline"]["total_curtailment_mwh"] < response_without["headline"]["total_curtailment_mwh"]
     assert response_with["headline"]["total_unmet_demand_mwh"] < response_without["headline"]["total_unmet_demand_mwh"]
     assert response_with["headline"]["generation_share_pct"]["v2g"] > 0
+
+
+def _zeroed_generation():
+    gen = DEFAULT_GENERATION.model_copy(deep=True)
+    for field_name in type(gen).model_fields:
+        if field_name.endswith("_gw"):
+            setattr(gen, field_name, 0.0)
+    return gen
+
+
+def test_battery_discharge_delivers_full_demand_when_not_power_or_soc_limited():
+    # Regression test: discharge used to apply round-trip efficiency to the
+    # delivered amount instead of the energy drawn from storage, so an ample
+    # battery would only ever cover `demand * efficiency`, leaking the rest
+    # to unmet demand even though it had plenty of charge and power headroom.
+    gen = _zeroed_generation()
+    gen.battery_gw = 1_000_000.0  # power and capacity both far beyond any single period's demand
+    periods = run_simulation(gen, DEFAULT_DEMAND)
+    p0 = periods[0]
+    assert p0.storage_discharge_mwh["battery"] == pytest.approx(p0.demand_mwh, rel=1e-9)
+    assert p0.unmet_demand_mwh == pytest.approx(0.0, abs=1e-6)
+
+
+def test_v2g_discharge_delivers_full_demand_when_not_power_or_soc_limited():
+    gen = _zeroed_generation()
+    gen.v2g_participation_pct = 100.0
+    demand = DemandConfig(heat_pump_pct=0, ev_pct=100, industry_pct=0, ac_pct=0)
+    periods = run_simulation(gen, demand)
+    p0 = periods[0]
+    # The full EV fleet (1,920 GWh) comfortably covers a single period's demand.
+    assert p0.storage_discharge_mwh["v2g"] == pytest.approx(p0.demand_mwh, rel=1e-9)
+    assert p0.unmet_demand_mwh == pytest.approx(0.0, abs=1e-6)
+
+
+def test_other_storage_discharge_delivers_full_demand_when_not_power_or_soc_limited():
+    gen = _zeroed_generation()
+    gen.other_storage_gw = 1_000_000.0
+    periods = run_simulation(gen, DEFAULT_DEMAND)
+    p0 = periods[0]
+    assert p0.storage_discharge_mwh["other_storage"] == pytest.approx(p0.demand_mwh, rel=1e-9)
+    assert p0.unmet_demand_mwh == pytest.approx(0.0, abs=1e-6)
+
+
+def test_discharge_power_rating_is_never_the_binding_constraint_given_current_durations():
+    # Given BATTERY_DURATION_HOURS (1.5h) and V2G_DURATION_HOURS (~8.6h) are
+    # both well under HOURS_PER_PERIOD/efficiency, a full state of charge can
+    # never deliver more than the per-period power rating - so the explicit
+    # power cap on discharge is mathematically dead code for both of them at
+    # these constants. (other_storage's 10.7h duration is still short of its
+    # own threshold too.) This is a standing property of the current tuning,
+    # not something either storage test above happens to avoid by accident.
+    assert BATTERY_DURATION_HOURS * BATTERY_EFFICIENCY < HOURS_PER_PERIOD
+    assert V2G_DURATION_HOURS * V2G_EFFICIENCY < HOURS_PER_PERIOD
+    assert OTHER_STORAGE_DURATION_HOURS * OTHER_STORAGE_EFFICIENCY < HOURS_PER_PERIOD
+
+
+def test_battery_discharge_soc_limited_applies_efficiency_to_stored_energy():
+    # When state of charge is the binding constraint, the battery should drain
+    # completely and deliver soc * efficiency (not soc itself) - the loss is
+    # real, it's just now charged against the stored energy, not the demand.
+    gen = _zeroed_generation()
+    gen.battery_gw = 10.0  # small enough that even a full period's demand dwarfs its SoC
+    periods = run_simulation(gen, DEFAULT_DEMAND)
+    p0 = periods[0]
+    initial_soc = gen.battery_gw * 1000 * BATTERY_DURATION_HOURS * 0.5
+    assert p0.storage_discharge_mwh["battery"] == pytest.approx(initial_soc * BATTERY_EFFICIENCY, rel=1e-9)
+    assert p0.unmet_demand_mwh > 0  # confirms this period really was SoC-limited, not a no-op
 
 
 def test_ac_demand_only_in_summer():

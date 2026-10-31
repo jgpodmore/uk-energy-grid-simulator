@@ -1,3 +1,5 @@
+import { useEffect, useState } from "react";
+
 // Categorical palette (validated, fixed order - see dataviz skill reference).
 // Each entity keeps the same slot everywhere in the app.
 export type SupplyKey =
@@ -85,8 +87,19 @@ export const STATUS = {
 };
 
 export function useIsDark(): boolean {
-  if (typeof window === "undefined" || !window.matchMedia) return false;
-  return window.matchMedia("(prefers-color-scheme: dark)").matches;
+  const getSnapshot = () =>
+    typeof window !== "undefined" && !!window.matchMedia && window.matchMedia("(prefers-color-scheme: dark)").matches;
+  const [dark, setDark] = useState(getSnapshot);
+
+  useEffect(() => {
+    if (typeof window === "undefined" || !window.matchMedia) return;
+    const mql = window.matchMedia("(prefers-color-scheme: dark)");
+    const onChange = () => setDark(mql.matches);
+    mql.addEventListener("change", onChange);
+    return () => mql.removeEventListener("change", onChange);
+  }, []);
+
+  return dark;
 }
 
 export function pick(pair: ColorPair, dark: boolean): string {
@@ -105,5 +118,8 @@ export function toSupplyKey(sourceKey: string): SupplyKey {
   if (sourceKey.startsWith("interconnector") || sourceKey === "morocco_link") return "interconnectors";
   if (sourceKey === "battery" || sourceKey === "other_storage" || sourceKey === "v2g") return "storage";
   if (sourceKey === "geothermal" || sourceKey === "tidal" || sourceKey === "hydro") return "other_renewables";
-  return "gas";
+  // Anything the backend adds that the frontend hasn't been taught about yet
+  // folds into the neutral "Other" bucket rather than silently masquerading
+  // as gas (which would misrepresent both its color and its legend entry).
+  return "other_renewables";
 }
