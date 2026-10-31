@@ -20,7 +20,7 @@ export default function HeadlineStats({ headline }: { headline: Headline }) {
       {headline.reliability_ok && (
         <div className="banner good">
           <strong>✓ Demand met.</strong>
-          <span>This mix covers demand in every 12-hour period across the year.</span>
+          <span>This mix covers demand in every hour across the year.</span>
         </div>
       )}
 

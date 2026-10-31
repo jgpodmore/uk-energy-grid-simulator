@@ -1,10 +1,11 @@
 """Core grid simulation engine.
 
-Models 365 days, each split into a 12h "day" period and a 12h "night"
-period (730 periods total). For every period we compute:
+Models 365 days, each split into 24 hourly periods (8,760 periods total).
+For every period we compute:
 
-  * demand (base seasonal demand + electrification add-ons)
-  * available generation from each source (weather/season/time-of-day
+  * demand (base seasonal demand + electrification add-ons, shaped across
+    the day by a realistic hourly load curve)
+  * available generation from each source (weather/season/hour-of-day
     dependent for solar & wind, flat for nuclear, "on demand up to
     capacity" for dispatchable sources)
   * a merit-order dispatch of the dispatchable sources (cheapest first)
@@ -18,7 +19,6 @@ All figures are illustrative approximations, not official statistics.
 """
 from __future__ import annotations
 
-import math
 from dataclasses import dataclass, field
 
 import numpy as np
@@ -26,7 +26,8 @@ import numpy as np
 from .models import DemandConfig, GenerationConfig
 
 DAYS_PER_YEAR = 365
-HOURS_PER_PERIOD = 12.0
+HOURS_PER_DAY = 24
+HOURS_PER_PERIOD = 1.0
 
 # gCO2 per kWh - standard "carbon intensity" convention (as used by GB's
 # carbonintensity.org.uk), not gCO2/MWh, to keep numbers on a familiar scale.
@@ -139,10 +140,10 @@ class WeatherYear:
     affect results, exactly as if we simulated the same weather year twice.
     """
 
-    wind_onshore_cf: np.ndarray  # (365, 2) [day, night]
-    wind_offshore_cf: np.ndarray  # (365, 2)
-    tidal_cf: np.ndarray  # (365,) same value used for day & night - see note below
-    hydro_cf: np.ndarray  # (365,) same value used for day & night - river flow doesn't care about time of day
+    wind_onshore_cf: np.ndarray  # (365, 24)
+    wind_offshore_cf: np.ndarray  # (365, 24)
+    tidal_cf: np.ndarray  # (365,) same value used across all 24 hours - see note below
+    hydro_cf: np.ndarray  # (365,) same value used across all 24 hours - river flow doesn't care about time of day
 
     @staticmethod
     def build(seed: int = _WEATHER_SEED) -> "WeatherYear":
@@ -150,13 +151,26 @@ class WeatherYear:
         rng = np.random.default_rng(seed)
 
         # Wind: seasonal mean capacity factor, peaking in winter (day ~355),
-        # plus day-to-day intermittency noise (independently for day/night).
+        # plus hour-to-hour intermittency noise.
         onshore_seasonal = _seasonal(days, peak_day=355, mean=0.275, amplitude=0.075)
         offshore_seasonal = _seasonal(days, peak_day=355, mean=0.40, amplitude=0.10)
 
         def with_noise(seasonal: np.ndarray) -> np.ndarray:
-            noise = rng.normal(loc=1.0, scale=0.35, size=(DAYS_PER_YEAR, 2))
-            noise = np.clip(noise, 0.0, 2.0)
+            # Noise is autocorrelated (AR(1)) rather than independent draw-to-draw -
+            # real wind tends to stay windy or calm for several hours at a stretch,
+            # not swing randomly from one hour to the next. The AR(1) coefficient
+            # (0.85) is "variance-preserving": the resulting series still has
+            # mean 0, std 1 before being rescaled below, so the overall spread of
+            # capacity factors is unchanged from a naive iid draw - only the
+            # hour-to-hour persistence improves.
+            n = DAYS_PER_YEAR * HOURS_PER_DAY
+            innovations = rng.normal(loc=0.0, scale=1.0, size=n)
+            alpha = 0.85
+            x = np.empty(n)
+            x[0] = innovations[0]
+            for i in range(1, n):
+                x[i] = alpha * x[i - 1] + np.sqrt(1 - alpha**2) * innovations[i]
+            noise = np.clip(1.0 + x * 0.35, 0.0, 2.0).reshape(DAYS_PER_YEAR, HOURS_PER_DAY)
             cf = seasonal[:, None] * noise
             return np.clip(cf, 0.0, 0.95)
 
@@ -166,17 +180,18 @@ class WeatherYear:
         # Tidal: unlike wind, tidal flow is fully predictable - not random -
         # but it isn't flat like nuclear either. It follows the ~14.77 day
         # spring/neap cycle (bigger tides, more energy, around new/full moon).
-        # Individual high/low tides shift ~50 minutes later each day and so
-        # drift across our fixed 12h day/night split; averaged over each
-        # 12h block that drift roughly cancels out, so we apply the same
-        # spring/neap-modulated capacity factor to both periods of a day.
+        # Individual high/low tides shift ~50 minutes later each day and cycle
+        # roughly twice a day; modelling that exact timing is more detail than
+        # this illustrative model needs, so we apply the same spring/neap-
+        # modulated capacity factor across all 24 hours of a day.
         tidal_cf = 0.35 + 0.12 * np.cos(2 * np.pi * days / 14.765)
         tidal_cf = np.clip(tidal_cf, 0.0, 0.6)
 
         # Hydro (natural flow / run-of-river): output tracks rainfall and
         # river flow, which is highest in the wet, low-evaporation winter
         # months and lowest in summer - same seasonal shape as wind, but
-        # deterministic rather than randomly intermittent.
+        # deterministic rather than randomly intermittent, and doesn't vary
+        # meaningfully hour to hour.
         hydro_cf = _seasonal(days, peak_day=355, mean=0.40, amplitude=0.15)
         hydro_cf = np.clip(hydro_cf, 0.1, 0.75)
 
@@ -253,6 +268,47 @@ def solar_latitude_multiplier(latitude_deg: float) -> float:
     return at_latitude / at_uk
 
 
+def solar_hourly_capacity_factor_profile(latitude_deg: float) -> np.ndarray:
+    """Hour-by-hour solar capacity factor for each of the 365 days, at the
+    given latitude - shape (365, 24).
+
+    solar_capacity_factor_profile() above gives each day's *mean* capacity
+    factor, calibrated against the UK's actual output and the latitude
+    toggle. This redistributes that same daily energy budget across the 24
+    hours using the sun's actual position that hour (the hour angle and
+    zenith angle - the same declination computed above, now applied once
+    per hour instead of integrated over the whole day), so sunrise and
+    sunset shift realistically with the season and latitude - long summer
+    days, short winter ones - while each day's *total* stays exactly what
+    it was calibrated to be. Local solar noon is assumed to be 12:00 clock
+    time (ignoring the equation of time and exact longitude/timezone
+    offset - a reasonable illustrative simplification, same spirit as the
+    rest of this model).
+    """
+    days = np.arange(DAYS_PER_YEAR)
+    daily_cf = solar_capacity_factor_profile(latitude_deg)  # (365,)
+
+    declination_deg = 23.45 * np.sin(np.deg2rad(360.0 / DAYS_PER_YEAR * (284 + days)))  # (365,)
+    phi = np.deg2rad(latitude_deg)
+    delta = np.deg2rad(declination_deg)  # (365,)
+
+    hour_midpoints = np.arange(HOURS_PER_DAY) + 0.5  # (24,)
+    hour_angle = np.deg2rad(15.0 * (hour_midpoints - 12.0))  # (24,)
+
+    cos_zenith = (
+        np.sin(phi) * np.sin(delta)[:, None]
+        + np.cos(phi) * np.cos(delta)[:, None] * np.cos(hour_angle)[None, :]
+    )  # (365, 24)
+    raw_shape = np.clip(cos_zenith, 0.0, None)
+
+    daily_raw_total = raw_shape.sum(axis=1)  # (365,)
+    daily_raw_total_safe = np.where(daily_raw_total > 1e-9, daily_raw_total, 1.0)
+
+    # Spread each day's (mean_cf * 24h) energy budget across daylight hours
+    # proportionally to the sun's position that hour.
+    return (daily_cf * HOURS_PER_DAY)[:, None] * raw_shape / daily_raw_total_safe[:, None]
+
+
 # ---------------------------------------------------------------------------
 # Demand profile generation
 # ---------------------------------------------------------------------------
@@ -260,8 +316,6 @@ def solar_latitude_multiplier(latitude_deg: float) -> float:
 BASE_DEMAND_MEAN_GWH_PER_DAY = 800.0
 BASE_DEMAND_AMPLITUDE_GWH_PER_DAY = 160.0
 BASE_DEMAND_PEAK_DAY = 15  # mid January
-BASE_DAY_SHARE = 0.58
-BASE_NIGHT_SHARE = 0.42
 
 # Target annual demand (MWh) added at 100% adoption for each electrification lever.
 HEAT_PUMP_FULL_TWH = 90.0
@@ -273,6 +327,69 @@ AC_MONTH_START_DAY = 121  # ~May 1
 AC_MONTH_END_DAY = 273  # ~Sep 30
 
 
+def _normalize_hourly_shape(raw: list[float]) -> np.ndarray:
+    """A 24-element relative intraday shape, rescaled to mean 1.0 so it only
+    redistributes a day's total within the day rather than changing it."""
+    arr = np.array(raw, dtype=float)
+    return arr / arr.mean()
+
+
+# Relative shape of electricity demand across a 24h day (index 0 = the hour
+# starting at midnight), loosely matching GB grid's typical daily curve: an
+# overnight trough around 3-4am, a morning ramp, a modest midday plateau,
+# and an evening peak around 17:00-19:00.
+BASE_DEMAND_HOURLY_SHAPE = _normalize_hourly_shape(
+    [
+        0.78, 0.72, 0.68, 0.67, 0.68, 0.72,
+        0.80, 0.92, 1.02, 1.05, 1.05, 1.04,
+        1.03, 1.02, 1.02, 1.03, 1.08, 1.18,
+        1.25, 1.22, 1.12, 1.02, 0.92, 0.84,
+    ]
+)
+
+# Heat pumps: a mild morning and evening heating ramp either side of a
+# daytime lull, with an overnight setback.
+HEAT_PUMP_HOURLY_SHAPE = _normalize_hourly_shape(
+    [
+        0.85, 0.80, 0.78, 0.78, 0.80, 0.85,
+        1.15, 1.35, 1.25, 1.00, 0.90, 0.88,
+        0.88, 0.88, 0.90, 0.95, 1.10, 1.30,
+        1.35, 1.25, 1.10, 1.00, 0.92, 0.88,
+    ]
+)
+
+# EVs: dominated by overnight off-peak charging, with a small daytime
+# baseline for workplace/public charging.
+EV_HOURLY_SHAPE = _normalize_hourly_shape(
+    [
+        2.2, 2.3, 2.3, 2.2, 2.0, 1.6,
+        0.9, 0.5, 0.4, 0.4, 0.4, 0.4,
+        0.4, 0.4, 0.4, 0.4, 0.4, 0.5,
+        0.6, 0.8, 1.2, 1.8, 2.1, 2.2,
+    ]
+)
+
+# Industry: a long daytime plateau matching typical shift patterns, low overnight.
+INDUSTRY_HOURLY_SHAPE = _normalize_hourly_shape(
+    [
+        0.35, 0.30, 0.30, 0.30, 0.35, 0.50,
+        0.90, 1.25, 1.35, 1.35, 1.35, 1.30,
+        1.25, 1.30, 1.35, 1.35, 1.30, 1.20,
+        1.00, 0.70, 0.50, 0.40, 0.35, 0.35,
+    ]
+)
+
+# Air conditioning: tracks temperature with a lag, peaking mid-to-late afternoon.
+AC_HOURLY_SHAPE = _normalize_hourly_shape(
+    [
+        0.25, 0.20, 0.20, 0.20, 0.20, 0.25,
+        0.35, 0.50, 0.70, 0.95, 1.25, 1.55,
+        1.85, 2.10, 2.25, 2.30, 2.20, 1.95,
+        1.60, 1.25, 0.95, 0.70, 0.50, 0.35,
+    ]
+)
+
+
 def _normalized_shape_mwh(shape: np.ndarray, target_twh: float) -> np.ndarray:
     total = shape.sum()
     if total <= 0:
@@ -280,42 +397,44 @@ def _normalized_shape_mwh(shape: np.ndarray, target_twh: float) -> np.ndarray:
     return shape / total * target_twh * 1_000_000.0  # TWh -> MWh
 
 
-def build_demand_mwh(demand: DemandConfig) -> tuple[np.ndarray, np.ndarray]:
-    """Returns (day_mwh, night_mwh) arrays of length 365."""
+def _spread_across_day(daily_mwh: np.ndarray, hourly_shape: np.ndarray) -> np.ndarray:
+    """Distributes each day's total (365,) across 24 hours using a relative
+    intraday shape (mean 1.0), returning (365, 24) MWh that sums back to
+    daily_mwh along axis 1."""
+    return daily_mwh[:, None] * (hourly_shape[None, :] / HOURS_PER_DAY)
+
+
+def build_demand_mwh(demand: DemandConfig) -> np.ndarray:
+    """Returns an (365, 24) array of hourly electricity demand in MWh."""
     days = np.arange(DAYS_PER_YEAR)
 
     base_daily_gwh = _seasonal(
         days, peak_day=BASE_DEMAND_PEAK_DAY, mean=BASE_DEMAND_MEAN_GWH_PER_DAY, amplitude=BASE_DEMAND_AMPLITUDE_GWH_PER_DAY
     )
     base_daily_mwh = base_daily_gwh * 1000.0
-    day_mwh = base_daily_mwh * BASE_DAY_SHARE
-    night_mwh = base_daily_mwh * BASE_NIGHT_SHARE
+    hourly_mwh = _spread_across_day(base_daily_mwh, BASE_DEMAND_HOURLY_SHAPE)
 
-    # Heat pumps: strongly winter-weighted (heating demand), split ~50/50 day/night.
+    # Heat pumps: strongly winter-weighted (heating demand).
     heat_shape = np.clip(_seasonal(days, peak_day=15, mean=1.0, amplitude=0.9), 0.05, None)
-    heat_annual_mwh = _normalized_shape_mwh(heat_shape, HEAT_PUMP_FULL_TWH * demand.heat_pump_pct / 100.0)
-    day_mwh = day_mwh + heat_annual_mwh * 0.50
-    night_mwh = night_mwh + heat_annual_mwh * 0.50
+    heat_daily_mwh = _normalized_shape_mwh(heat_shape, HEAT_PUMP_FULL_TWH * demand.heat_pump_pct / 100.0)
+    hourly_mwh += _spread_across_day(heat_daily_mwh, HEAT_PUMP_HOURLY_SHAPE)
 
     # EVs: flat across the year, mostly overnight charging.
     ev_shape = np.ones(DAYS_PER_YEAR)
-    ev_annual_mwh = _normalized_shape_mwh(ev_shape, EV_FULL_TWH * demand.ev_pct / 100.0)
-    day_mwh = day_mwh + ev_annual_mwh * 0.30
-    night_mwh = night_mwh + ev_annual_mwh * 0.70
+    ev_daily_mwh = _normalized_shape_mwh(ev_shape, EV_FULL_TWH * demand.ev_pct / 100.0)
+    hourly_mwh += _spread_across_day(ev_daily_mwh, EV_HOURLY_SHAPE)
 
     # Industry: flat across the year, mostly daytime shifts.
     industry_shape = np.ones(DAYS_PER_YEAR)
-    industry_annual_mwh = _normalized_shape_mwh(industry_shape, INDUSTRY_FULL_TWH * demand.industry_pct / 100.0)
-    day_mwh = day_mwh + industry_annual_mwh * 0.60
-    night_mwh = night_mwh + industry_annual_mwh * 0.40
+    industry_daily_mwh = _normalized_shape_mwh(industry_shape, INDUSTRY_FULL_TWH * demand.industry_pct / 100.0)
+    hourly_mwh += _spread_across_day(industry_daily_mwh, INDUSTRY_HOURLY_SHAPE)
 
-    # Air conditioning: only May-September, mostly daytime.
+    # Air conditioning: only May-September, mostly afternoon.
     ac_shape = np.where((days >= AC_MONTH_START_DAY) & (days <= AC_MONTH_END_DAY), 1.0, 0.0)
-    ac_annual_mwh = _normalized_shape_mwh(ac_shape, AC_FULL_TWH * demand.ac_pct / 100.0)
-    day_mwh = day_mwh + ac_annual_mwh * 0.90
-    night_mwh = night_mwh + ac_annual_mwh * 0.10
+    ac_daily_mwh = _normalized_shape_mwh(ac_shape, AC_FULL_TWH * demand.ac_pct / 100.0)
+    hourly_mwh += _spread_across_day(ac_daily_mwh, AC_HOURLY_SHAPE)
 
-    return day_mwh, night_mwh
+    return hourly_mwh
 
 
 # ---------------------------------------------------------------------------
@@ -326,7 +445,7 @@ def build_demand_mwh(demand: DemandConfig) -> tuple[np.ndarray, np.ndarray]:
 @dataclass
 class PeriodResult:
     day: int
-    period: str  # "day" | "night"
+    hour: int
     demand_mwh: float
     supply_mwh: dict = field(default_factory=dict)
     storage_charge_mwh: dict = field(default_factory=dict)
@@ -368,8 +487,28 @@ def effective_prices(gen: GenerationConfig) -> dict:
 
 def run_simulation(gen: GenerationConfig, demand: DemandConfig) -> list[PeriodResult]:
     prices = effective_prices(gen)
-    day_demand_mwh, night_demand_mwh = build_demand_mwh(demand)
-    solar_cf_profile = solar_capacity_factor_profile(gen.solar_latitude_deg)
+    hourly_demand_mwh = build_demand_mwh(demand)
+    solar_cf_profile = solar_hourly_capacity_factor_profile(gen.solar_latitude_deg)
+
+    # Plain Python lists are much faster to index than numpy arrays inside a
+    # tight per-hour Python loop (8,760 iterations) - convert once up front.
+    hourly_demand_flat = hourly_demand_mwh.reshape(-1).tolist()
+    solar_cf_flat = solar_cf_profile.reshape(-1).tolist()
+    onshore_cf_flat = _WEATHER_YEAR.wind_onshore_cf.reshape(-1).tolist()
+    offshore_cf_flat = _WEATHER_YEAR.wind_offshore_cf.reshape(-1).tolist()
+    tidal_cf_list = _WEATHER_YEAR.tidal_cf.tolist()
+    hydro_cf_list = _WEATHER_YEAR.hydro_cf.tolist()
+
+    # Coefficients that are constant across the whole run - hoist the
+    # gw -> MWh/period unit conversion out of the per-hour loop.
+    nuclear_mwh = gen.nuclear_gw * 1000 * HOURS_PER_PERIOD * NUCLEAR_AVAILABILITY
+    geothermal_mwh = gen.geothermal_gw * 1000 * HOURS_PER_PERIOD * GEOTHERMAL_AVAILABILITY
+    solar_field_coeff = gen.solar_field_gw * 1000 * HOURS_PER_PERIOD
+    solar_roof_coeff = gen.solar_roof_gw * 1000 * HOURS_PER_PERIOD
+    onshore_coeff = gen.wind_onshore_gw * 1000 * HOURS_PER_PERIOD
+    offshore_coeff = gen.wind_offshore_gw * 1000 * HOURS_PER_PERIOD
+    tidal_coeff = gen.tidal_gw * 1000 * HOURS_PER_PERIOD
+    hydro_coeff = gen.hydro_gw * 1000 * HOURS_PER_PERIOD
 
     battery_capacity_mwh = gen.battery_gw * 1000 * BATTERY_DURATION_HOURS
     other_capacity_mwh = gen.other_storage_gw * 1000 * OTHER_STORAGE_DURATION_HOURS
@@ -384,35 +523,55 @@ def run_simulation(gen: GenerationConfig, demand: DemandConfig) -> list[PeriodRe
 
     results: list[PeriodResult] = []
 
+    # Dispatch caps and merit order are invariant across the whole run - compute once.
+    dispatch_caps = {
+        "gas": gen.gas_gw,
+        "biomass": gen.biomass_gw,
+        "interconnector_france": gen.interconnector_france_gw,
+        "interconnector_norway": gen.interconnector_norway_gw,
+        "interconnector_belgium": gen.interconnector_belgium_gw,
+        "interconnector_netherlands": gen.interconnector_netherlands_gw,
+        "morocco_link": gen.morocco_link_gw,
+    }
+    order = sorted(DISPATCHABLE_SOURCES, key=lambda s: prices[s])
+
+    t = 0
     for day_idx in range(DAYS_PER_YEAR):
-        for period_name, demand_mwh in (("day", day_demand_mwh[day_idx]), ("night", night_demand_mwh[day_idx])):
-            is_day = period_name == "day"
+        tidal_mwh = tidal_coeff * tidal_cf_list[day_idx]
+        hydro_mwh = hydro_coeff * hydro_cf_list[day_idx]
+
+        for hour in range(HOURS_PER_DAY):
+            demand_mwh = hourly_demand_flat[t]
 
             # --- Must-run availability for this period ---
-            must_run_mwh = {}
-            must_run_mwh["nuclear"] = gen.nuclear_gw * 1000 * HOURS_PER_PERIOD * NUCLEAR_AVAILABILITY
+            solar_cf = solar_cf_flat[t]
+            solar_field_mwh = solar_field_coeff * solar_cf
+            solar_roof_mwh = solar_roof_coeff * solar_cf
+            wind_onshore_mwh = onshore_coeff * onshore_cf_flat[t]
+            wind_offshore_mwh = offshore_coeff * offshore_cf_flat[t]
+            t += 1
 
-            solar_cf = solar_cf_profile[day_idx] if is_day else 0.0
-            must_run_mwh["solar_field"] = gen.solar_field_gw * 1000 * HOURS_PER_PERIOD * solar_cf
-            must_run_mwh["solar_roof"] = gen.solar_roof_gw * 1000 * HOURS_PER_PERIOD * solar_cf
+            total_must_run = (
+                nuclear_mwh
+                + solar_field_mwh
+                + solar_roof_mwh
+                + wind_onshore_mwh
+                + wind_offshore_mwh
+                + geothermal_mwh
+                + tidal_mwh
+                + hydro_mwh
+            )
 
-            wind_period_idx = 0 if is_day else 1
-            onshore_cf = _WEATHER_YEAR.wind_onshore_cf[day_idx, wind_period_idx]
-            offshore_cf = _WEATHER_YEAR.wind_offshore_cf[day_idx, wind_period_idx]
-            must_run_mwh["wind_onshore"] = gen.wind_onshore_gw * 1000 * HOURS_PER_PERIOD * onshore_cf
-            must_run_mwh["wind_offshore"] = gen.wind_offshore_gw * 1000 * HOURS_PER_PERIOD * offshore_cf
-
-            must_run_mwh["geothermal"] = gen.geothermal_gw * 1000 * HOURS_PER_PERIOD * GEOTHERMAL_AVAILABILITY
-
-            tidal_cf = _WEATHER_YEAR.tidal_cf[day_idx]
-            must_run_mwh["tidal"] = gen.tidal_gw * 1000 * HOURS_PER_PERIOD * tidal_cf
-
-            hydro_cf = _WEATHER_YEAR.hydro_cf[day_idx]
-            must_run_mwh["hydro"] = gen.hydro_gw * 1000 * HOURS_PER_PERIOD * hydro_cf
-
-            total_must_run = sum(must_run_mwh.values())
-
-            supply_mwh: dict[str, float] = dict(must_run_mwh)
+            supply_mwh: dict[str, float] = {
+                "nuclear": nuclear_mwh,
+                "solar_field": solar_field_mwh,
+                "solar_roof": solar_roof_mwh,
+                "wind_onshore": wind_onshore_mwh,
+                "wind_offshore": wind_offshore_mwh,
+                "geothermal": geothermal_mwh,
+                "tidal": tidal_mwh,
+                "hydro": hydro_mwh,
+            }
             storage_charge: dict[str, float] = {}
             storage_discharge: dict[str, float] = {}
             curtailment: dict[str, float] = {}
@@ -424,16 +583,6 @@ def run_simulation(gen: GenerationConfig, demand: DemandConfig) -> list[PeriodRe
 
             if residual >= 0:
                 # Dispatch dispatchable sources in ascending price (merit) order.
-                dispatch_caps = {
-                    "gas": gen.gas_gw,
-                    "biomass": gen.biomass_gw,
-                    "interconnector_france": gen.interconnector_france_gw,
-                    "interconnector_norway": gen.interconnector_norway_gw,
-                    "interconnector_belgium": gen.interconnector_belgium_gw,
-                    "interconnector_netherlands": gen.interconnector_netherlands_gw,
-                    "morocco_link": gen.morocco_link_gw,
-                }
-                order = sorted(DISPATCHABLE_SOURCES, key=lambda s: prices[s])
                 remaining = residual
                 for source in order:
                     if remaining <= 1e-9:
@@ -450,15 +599,11 @@ def run_simulation(gen: GenerationConfig, demand: DemandConfig) -> list[PeriodRe
                     # the charge path below caps - so a power-limited battery still delivers
                     # its full rated power; efficiency only grows the SoC drawn down to supply it.
                     #
-                    # Note: at the current duration constants (all well under
-                    # HOURS_PER_PERIOD), the power-rating term in each min()
-                    # below is never actually the binding one for discharge -
-                    # a full charge always empties before the power cap would
-                    # bite (see test_discharge_power_rating_is_never_the_
-                    # binding_constraint_given_current_durations). It's kept
-                    # here because it's still correct and becomes relevant if
-                    # HOURS_PER_PERIOD ever shrinks (e.g. hourly resolution)
-                    # or a storage type gets a much longer duration.
+                    # At hourly resolution (HOURS_PER_PERIOD = 1h) the power-rating term can
+                    # now actually bind: a short-duration battery (e.g. 1.5h) with a lot of
+                    # stored energy can still be capped by its power rating within a single
+                    # hour, unlike the old 12-hour-block model where SoC always ran out first
+                    # (see test_battery_discharge_can_be_power_limited_at_hourly_resolution).
                     batt_take = min(remaining, battery_power_mwh_per_period, battery_soc * BATTERY_EFFICIENCY)
                     if batt_take > 0:
                         battery_soc -= batt_take / BATTERY_EFFICIENCY
@@ -544,7 +689,7 @@ def run_simulation(gen: GenerationConfig, demand: DemandConfig) -> list[PeriodRe
             results.append(
                 PeriodResult(
                     day=day_idx,
-                    period=period_name,
+                    hour=hour,
                     demand_mwh=demand_mwh,
                     supply_mwh=supply_mwh,
                     storage_charge_mwh=storage_charge,

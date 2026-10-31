@@ -14,6 +14,7 @@ from app.defaults import (
 from app.models import DemandConfig
 from app.simulation import (
     DAYS_PER_YEAR,
+    HOURS_PER_DAY,
     BATTERY_DURATION_HOURS,
     BATTERY_EFFICIENCY,
     HOUSTON_LATITUDE_DEG,
@@ -25,8 +26,10 @@ from app.simulation import (
     UK_FLEET_ENERGY_MWH_AT_FULL_ELECTRIFICATION,
     V2G_DURATION_HOURS,
     V2G_EFFICIENCY,
+    build_demand_mwh,
     run_simulation,
     solar_capacity_factor_profile,
+    solar_hourly_capacity_factor_profile,
     solar_latitude_multiplier,
     v2g_capacity_mwh_for,
     v2g_power_mw_for,
@@ -35,7 +38,7 @@ from app.simulation import (
 
 def test_run_simulation_length():
     periods = run_simulation(DEFAULT_GENERATION, DEFAULT_DEMAND)
-    assert len(periods) == DAYS_PER_YEAR * 2
+    assert len(periods) == DAYS_PER_YEAR * HOURS_PER_DAY
 
 
 def test_no_negative_supply_or_demand():
@@ -56,8 +59,12 @@ def test_default_mix_meets_demand():
 
 
 def test_solar_zero_at_night():
+    # Hours 0-3 and 20-23 are dark year-round in the UK (even at midsummer),
+    # so solar output must be exactly zero at those hours every single day.
+    always_dark_hours = {0, 1, 2, 3, 20, 21, 22, 23}
     periods = run_simulation(DEFAULT_GENERATION, DEFAULT_DEMAND)
-    night_periods = [p for p in periods if p.period == "night"]
+    night_periods = [p for p in periods if p.hour in always_dark_hours]
+    assert len(night_periods) == DAYS_PER_YEAR * len(always_dark_hours)
     for p in night_periods:
         assert p.supply_mwh.get("solar_field", 0.0) == 0.0
         assert p.supply_mwh.get("solar_roof", 0.0) == 0.0
@@ -128,7 +135,7 @@ def test_tidal_is_deterministic_and_bounded():
     tidal_a = [p.supply_mwh.get("tidal", 0.0) for p in periods_a]
     tidal_b = [p.supply_mwh.get("tidal", 0.0) for p in periods_b]
     assert tidal_a == tidal_b
-    max_possible = gen.tidal_gw * 1000 * 12.0  # 100% capacity factor ceiling
+    max_possible = gen.tidal_gw * 1000 * HOURS_PER_PERIOD  # 100% capacity factor ceiling
     assert all(0 <= v <= max_possible for v in tidal_a)
     assert any(v > 0 for v in tidal_a)
 
@@ -152,11 +159,11 @@ def test_hydro_is_deterministic_seasonal_and_bounded():
     hydro_a = [p.supply_mwh.get("hydro", 0.0) for p in periods_a]
     hydro_b = [p.supply_mwh.get("hydro", 0.0) for p in periods_b]
     assert hydro_a == hydro_b
-    max_possible = gen.hydro_gw * 1000 * 12.0
+    max_possible = gen.hydro_gw * 1000 * HOURS_PER_PERIOD
     assert all(0 <= v <= max_possible for v in hydro_a)
     assert any(v > 0 for v in hydro_a)
     # Winter (day 0) should be wetter/higher output than midsummer (day ~172).
-    assert hydro_a[0] > hydro_a[172 * 2]
+    assert hydro_a[0] > hydro_a[172 * HOURS_PER_DAY]
 
 
 def test_nuclear_slider_allows_up_to_100gw():
@@ -240,6 +247,36 @@ def test_lower_latitude_increases_solar_output():
 
     assert solar_latitude_multiplier(MADRID_NEW_YORK_LATITUDE_DEG) == pytest.approx(1.18, abs=0.05)
     assert solar_latitude_multiplier(HOUSTON_LATITUDE_DEG) == pytest.approx(1.32, abs=0.05)
+
+
+def test_hourly_solar_profile_preserves_daily_totals():
+    # The hourly profile reshapes each day's output across 24 hours but must
+    # preserve the exact same daily-mean calibration as the pre-existing
+    # (365,) profile - otherwise the latitude toggle and annual solar output
+    # tests would silently drift.
+    daily_cf = solar_capacity_factor_profile(UK_ACTUAL_LATITUDE_DEG)
+    hourly_cf = solar_hourly_capacity_factor_profile(UK_ACTUAL_LATITUDE_DEG)
+    assert hourly_cf.shape == (DAYS_PER_YEAR, HOURS_PER_DAY)
+    daily_totals_from_hourly = hourly_cf.sum(axis=1) / HOURS_PER_DAY
+    assert daily_totals_from_hourly == pytest.approx(daily_cf, rel=1e-9)
+
+
+def test_hourly_solar_profile_has_realistic_seasonal_sunrise_sunset():
+    # Winter days should have a much shorter window of daylight hours than
+    # summer days, and that window should be roughly centred on midday.
+    hourly_cf = solar_hourly_capacity_factor_profile(UK_ACTUAL_LATITUDE_DEG)
+    winter_day_idx = 0
+    summer_day_idx = 172
+
+    winter_daylight_hours = int((hourly_cf[winter_day_idx] > 0).sum())
+    summer_daylight_hours = int((hourly_cf[summer_day_idx] > 0).sum())
+    assert winter_daylight_hours < summer_daylight_hours
+    assert 6 <= winter_daylight_hours <= 10
+    assert 14 <= summer_daylight_hours <= 18
+
+    # No solar output in the middle of the night on either day.
+    assert hourly_cf[winter_day_idx, 2] == 0.0
+    assert hourly_cf[summer_day_idx, 2] == 0.0
 
 
 def test_solar_latitude_toggle_boosts_delivered_solar_generation():
@@ -356,17 +393,41 @@ def test_other_storage_discharge_delivers_full_demand_when_not_power_or_soc_limi
     assert p0.unmet_demand_mwh == pytest.approx(0.0, abs=1e-6)
 
 
-def test_discharge_power_rating_is_never_the_binding_constraint_given_current_durations():
-    # Given BATTERY_DURATION_HOURS (1.5h) and V2G_DURATION_HOURS (~8.6h) are
-    # both well under HOURS_PER_PERIOD/efficiency, a full state of charge can
-    # never deliver more than the per-period power rating - so the explicit
-    # power cap on discharge is mathematically dead code for both of them at
-    # these constants. (other_storage's 10.7h duration is still short of its
-    # own threshold too.) This is a standing property of the current tuning,
-    # not something either storage test above happens to avoid by accident.
-    assert BATTERY_DURATION_HOURS * BATTERY_EFFICIENCY < HOURS_PER_PERIOD
-    assert V2G_DURATION_HOURS * V2G_EFFICIENCY < HOURS_PER_PERIOD
-    assert OTHER_STORAGE_DURATION_HOURS * OTHER_STORAGE_EFFICIENCY < HOURS_PER_PERIOD
+def test_discharge_power_rating_can_now_bind_at_hourly_resolution():
+    # At the old 12-hour-block resolution, every storage duration was shorter
+    # than HOURS_PER_PERIOD, so a full state of charge always ran out before
+    # the power cap could bind - the power-rating term in the discharge min()
+    # was mathematically dead code. At hourly resolution (HOURS_PER_PERIOD =
+    # 1h), batteries (1.5h duration) and other_storage (10.7h) can now hold
+    # more energy than their power rating can deliver in a single hour, so
+    # the power cap becomes a real, reachable constraint.
+    assert BATTERY_DURATION_HOURS * BATTERY_EFFICIENCY > HOURS_PER_PERIOD
+    assert OTHER_STORAGE_DURATION_HOURS * OTHER_STORAGE_EFFICIENCY > HOURS_PER_PERIOD
+
+
+def test_battery_discharge_can_be_power_limited_at_hourly_resolution():
+    # A battery sized with plenty of stored energy but a modest power rating
+    # should be capped at its rated power for a full hour, delivering less
+    # than its available (SoC * efficiency) energy that hour - demonstrating
+    # the storage power rating is a real, reachable constraint now that each
+    # period is a single hour rather than a 12-hour block. Nuclear is tuned
+    # between the trough and peak hourly demand so the battery fills up on
+    # overnight surplus and then discharges into the daytime/evening gap.
+    gen = _zeroed_generation()
+    gen.nuclear_gw = 33.33
+    gen.battery_gw = 2.0  # 2 GW power rating, 1.5h duration -> 3 GWh capacity
+    periods = run_simulation(gen, DEFAULT_DEMAND)
+    power_cap_mwh = gen.battery_gw * 1000 * HOURS_PER_PERIOD
+
+    power_limited_found = False
+    for i in range(1, len(periods)):
+        prev, cur = periods[i - 1], periods[i]
+        discharged = cur.storage_discharge_mwh.get("battery", 0.0)
+        available_mwh = prev.battery_soc_mwh * BATTERY_EFFICIENCY
+        if discharged == pytest.approx(power_cap_mwh, rel=1e-6) and available_mwh > power_cap_mwh + 1e-6:
+            power_limited_found = True
+            break
+    assert power_limited_found
 
 
 def test_battery_discharge_soc_limited_applies_efficiency_to_stored_energy():
@@ -383,16 +444,16 @@ def test_battery_discharge_soc_limited_applies_efficiency_to_stored_energy():
 
 
 def test_ac_demand_only_in_summer():
-    from app.models import DemandConfig
-    from app.simulation import build_demand_mwh
-
     demand = DemandConfig(heat_pump_pct=0, ev_pct=0, industry_pct=0, ac_pct=100)
     baseline = DemandConfig(heat_pump_pct=0, ev_pct=0, industry_pct=0, ac_pct=0)
-    day_mwh, night_mwh = build_demand_mwh(demand)
-    base_day_mwh, base_night_mwh = build_demand_mwh(baseline)
+    hourly_mwh = build_demand_mwh(demand)
+    base_hourly_mwh = build_demand_mwh(baseline)
 
     winter_day_idx = 0  # Jan 1st
     summer_day_idx = 200  # ~mid July
 
-    assert abs((day_mwh[winter_day_idx] - base_day_mwh[winter_day_idx])) < 1.0
-    assert (day_mwh[summer_day_idx] - base_day_mwh[summer_day_idx]) > 1.0
+    winter_delta = hourly_mwh[winter_day_idx].sum() - base_hourly_mwh[winter_day_idx].sum()
+    summer_delta = hourly_mwh[summer_day_idx].sum() - base_hourly_mwh[summer_day_idx].sum()
+
+    assert abs(winter_delta) < 1.0
+    assert summer_delta > 1.0

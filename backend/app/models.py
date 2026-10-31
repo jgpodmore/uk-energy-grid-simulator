@@ -24,7 +24,7 @@ class GenerationConfig(BaseModel):
     wind_offshore_gw: float = Field(ge=0, le=120)
     wind_offshore_price: float = Field(ge=20, le=150)
 
-    gas_gw: float = Field(ge=0, le=45)
+    gas_gw: float = Field(ge=0, le=55)
     gas_price: float = Field(ge=5, le=180, description="Gas commodity price, GBP/MWh thermal")
 
     biomass_gw: float = Field(ge=0, le=10)
