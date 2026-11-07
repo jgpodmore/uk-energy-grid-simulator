@@ -45,7 +45,9 @@ export default function GenerationPanel({ generation, meta, headline, solarLatit
         <LatitudeToggle
           value={generation.solar_latitude_deg}
           presets={solarLatitudePresets}
-          multiplier={headline?.solar_latitude_multiplier ?? null}
+          solarMultiplier={headline?.solar_latitude_multiplier ?? null}
+          heatingMultiplier={headline?.heating_latitude_multiplier ?? null}
+          acMultiplier={headline?.ac_latitude_multiplier ?? null}
           onChange={(v) => onChange("solar_latitude_deg", v)}
         />
       </div>

@@ -268,6 +268,53 @@ def solar_latitude_multiplier(latitude_deg: float) -> float:
     return at_latitude / at_uk
 
 
+# The same latitude toggle also scales heating and air-conditioning demand -
+# moving to a sunnier/lower latitude means milder winters (less heating) and
+# hotter summers (more AC), the same climate trade-off the preset labels
+# (Madrid/New York, Houston) are gesturing at.
+
+_WINTER_SOLSTICE_DAY = 355  # ~Dec 21
+
+
+def heating_latitude_multiplier(latitude_deg: float) -> float:
+    """How much heat-pump demand scales at this latitude versus the UK's
+    actual latitude. Derived from the same extraterrestrial-irradiance
+    geometry as the solar model above: a lower latitude gets a much sunnier
+    midwinter (higher sun angle, longer winter day length), which stands in
+    for milder winters needing less heating - e.g. Houston's midwinter sun
+    is roughly 3x the UK's, so this lands its heating demand at roughly a
+    third of the UK's. Unlike solar, this is a proxy (insolation standing in
+    for temperature), not a direct physical quantity, but it's the same
+    geometric effect that drives real winter temperature differences by
+    latitude, and keeps this toggle internally consistent with the solar
+    model rather than introducing an unrelated climate dataset."""
+    winter_day = np.array([_WINTER_SOLSTICE_DAY])
+    uk_winter_irradiance = _relative_extraterrestrial_irradiance(UK_ACTUAL_LATITUDE_DEG, winter_day)[0]
+    at_latitude_winter_irradiance = _relative_extraterrestrial_irradiance(latitude_deg, winter_day)[0]
+    return uk_winter_irradiance / at_latitude_winter_irradiance
+
+
+# Top-of-atmosphere summer irradiance barely changes with latitude across
+# this slider's range (UK/Madrid/Houston are all within a few percent of
+# each other at midsummer) - real summer heat, and therefore AC demand,
+# instead comes from atmospheric/climate effects this model otherwise
+# deliberately excludes (see the solar geometry note above). So rather than
+# reuse the astronomy, AC gets its own illustrative, hand-tuned linear
+# scaling by latitude, calibrated so Houston's AC demand lands at roughly
+# 3x the UK's - a believable gap between a country that rarely uses AC and
+# one where it's close to a necessity.
+_AC_LATITUDE_SLOPE = 0.093  # multiplier change per degree moved away from the UK's latitude
+_AC_LATITUDE_MULTIPLIER_FLOOR = 0.1  # never quite zero - heatwaves happen everywhere
+
+
+def ac_latitude_multiplier(latitude_deg: float) -> float:
+    """How much air-conditioning demand scales at this latitude versus the
+    UK's actual latitude - see the module note above for why this is a
+    hand-tuned scaling rather than one derived from the solar geometry."""
+    raw = 1.0 + _AC_LATITUDE_SLOPE * (UK_ACTUAL_LATITUDE_DEG - latitude_deg)
+    return max(raw, _AC_LATITUDE_MULTIPLIER_FLOOR)
+
+
 def solar_hourly_capacity_factor_profile(latitude_deg: float) -> np.ndarray:
     """Hour-by-hour solar capacity factor for each of the 365 days, at the
     given latitude - shape (365, 24).
@@ -408,8 +455,15 @@ def _spread_across_day(daily_mwh: np.ndarray, hourly_shape: np.ndarray) -> np.nd
     return daily_mwh[:, None] * (hourly_shape[None, :] / HOURS_PER_DAY)
 
 
-def build_demand_mwh(demand: DemandConfig) -> np.ndarray:
-    """Returns an (365, 24) array of hourly electricity demand in MWh."""
+def build_demand_mwh(demand: DemandConfig, latitude_deg: float = UK_ACTUAL_LATITUDE_DEG) -> np.ndarray:
+    """Returns an (365, 24) array of hourly electricity demand in MWh.
+
+    latitude_deg reuses the same toggle as the solar latitude model (see
+    heating_latitude_multiplier/ac_latitude_multiplier above) to scale
+    heating and air-conditioning demand - it defaults to the UK's actual
+    latitude, which is a no-op (both multipliers are exactly 1.0 there), so
+    existing callers that only care about the demand levers are unaffected.
+    """
     days = np.arange(DAYS_PER_YEAR)
 
     base_daily_gwh = _seasonal(
@@ -418,9 +472,11 @@ def build_demand_mwh(demand: DemandConfig) -> np.ndarray:
     base_daily_mwh = base_daily_gwh * 1000.0
     hourly_mwh = _spread_across_day(base_daily_mwh, BASE_DEMAND_HOURLY_SHAPE)
 
-    # Heat pumps: strongly winter-weighted (heating demand).
+    # Heat pumps: strongly winter-weighted (heating demand), scaled by how
+    # much milder winters are at this latitude.
     heat_shape = np.clip(_seasonal(days, peak_day=15, mean=1.0, amplitude=0.9), 0.05, None)
-    heat_daily_mwh = _normalized_shape_mwh(heat_shape, HEAT_PUMP_FULL_TWH * demand.heat_pump_pct / 100.0)
+    heat_target_twh = HEAT_PUMP_FULL_TWH * demand.heat_pump_pct / 100.0 * heating_latitude_multiplier(latitude_deg)
+    heat_daily_mwh = _normalized_shape_mwh(heat_shape, heat_target_twh)
     hourly_mwh += _spread_across_day(heat_daily_mwh, HEAT_PUMP_HOURLY_SHAPE)
 
     # EVs: flat across the year, mostly overnight charging.
@@ -443,8 +499,10 @@ def build_demand_mwh(demand: DemandConfig) -> np.ndarray:
     # spreading it evenly across the warm half of the year.
     temperature_shape = _seasonal(days, peak_day=AC_TEMPERATURE_PEAK_DAY, mean=0.0, amplitude=1.0)
     cooling_degree = np.clip(temperature_shape - AC_COOLING_THRESHOLD, 0.0, None)
+    # Scaled by how much hotter summers are at this latitude.
     ac_shape = cooling_degree**AC_COOLING_EXPONENT
-    ac_daily_mwh = _normalized_shape_mwh(ac_shape, AC_FULL_TWH * demand.ac_pct / 100.0)
+    ac_target_twh = AC_FULL_TWH * demand.ac_pct / 100.0 * ac_latitude_multiplier(latitude_deg)
+    ac_daily_mwh = _normalized_shape_mwh(ac_shape, ac_target_twh)
     hourly_mwh += _spread_across_day(ac_daily_mwh, AC_HOURLY_SHAPE)
 
     return hourly_mwh
@@ -500,7 +558,7 @@ def effective_prices(gen: GenerationConfig) -> dict:
 
 def run_simulation(gen: GenerationConfig, demand: DemandConfig) -> list[PeriodResult]:
     prices = effective_prices(gen)
-    hourly_demand_mwh = build_demand_mwh(demand)
+    hourly_demand_mwh = build_demand_mwh(demand, gen.solar_latitude_deg)
     solar_cf_profile = solar_hourly_capacity_factor_profile(gen.solar_latitude_deg)
 
     # Plain Python lists are much faster to index than numpy arrays inside a

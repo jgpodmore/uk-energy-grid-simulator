@@ -26,6 +26,9 @@ periods total):
   geometric effect of latitude only - it deliberately excludes the extra
   boost Madrid/Houston get in reality from being drier and less cloudy than
   the UK, consistent with solar's "ignore weather" simplification elsewhere.
+  The same toggle also scales heating and air-conditioning demand (see
+  "Demand" below) - a sunnier/lower latitude means milder winters and
+  hotter summers, the climate trade-off the preset labels are gesturing at.
 - **Nuclear** generates flat output year-round, hour by hour.
 - **Onshore/offshore wind** use seasonal average wind capacity factors (higher
   in winter) plus hour-to-hour intermittency with realistic persistence (an
@@ -84,7 +87,13 @@ periods total):
   window tracks a smooth annual temperature cycle, ramping up through
   spring, peaking in the hottest stretch of midsummer (late July), and
   tapering off through autumn, concentrated into the hottest weeks rather
-  than spread evenly - and within each hot day, mostly afternoon.
+  than spread evenly - and within each hot day, mostly afternoon. Heat
+  pump and AC demand both also scale with the solar latitude toggle: at
+  Houston's latitude, heating demand drops to roughly a third of the UK's
+  (much milder winters) while AC demand roughly triples (much hotter
+  summers) - for the same adoption-slider settings, so you can see how the
+  same electrification levers would land somewhere with a very different
+  climate.
 
 All figures (capacities, costs, capacity factors, demand growth) are
 illustrative approximations of the mid-2020s UK grid for an educational
