@@ -21,6 +21,7 @@ function buildShareText(headline: Headline): string {
     `Cost: £${headline.cost_per_mwh.toFixed(1)}/MWh (£${(headline.total_cost_gbp / 1_000_000_000).toFixed(2)}bn/yr total)`,
     `Emissions: ${(headline.total_emissions_tonnes / 1_000_000).toFixed(1)} MtCO2 (${headline.avg_carbon_intensity_gco2_per_kwh.toFixed(0)} gCO2/kWh average)`,
     `Curtailment payments: £${(headline.total_curtailment_payment_gbp / 1_000_000).toFixed(1)}m/yr`,
+    `Produced: ${(headline.total_delivered_mwh / 1_000_000).toFixed(1)} TWh/yr, Consumed: ${(headline.total_demand_mwh / 1_000_000).toFixed(1)} TWh/yr`,
     demandMetLine,
     `Generation mix: ${mixLine}`,
   ].join("\n");
