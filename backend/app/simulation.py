@@ -323,8 +323,12 @@ EV_FULL_TWH = 95.0
 INDUSTRY_FULL_TWH = 50.0
 AC_FULL_TWH = 20.0
 
-AC_MONTH_START_DAY = 121  # ~May 1
-AC_MONTH_END_DAY = 273  # ~Sep 30
+# Air conditioning tracks a smooth annual temperature cycle rather than
+# being switched on for a fixed block of months - see the ac_shape comment
+# in build_demand_mwh for how these translate into a cooling-degree curve.
+AC_TEMPERATURE_PEAK_DAY = 203  # ~Jul 22 - UK's hottest point on average, lagging the summer solstice
+AC_COOLING_THRESHOLD = 0.15  # fraction of the year (centred on the peak) with no cooling demand at all
+AC_COOLING_EXPONENT = 2.0  # >1 so demand is concentrated into the hottest weeks, not spread evenly
 
 
 def _normalize_hourly_shape(raw: list[float]) -> np.ndarray:
@@ -429,8 +433,17 @@ def build_demand_mwh(demand: DemandConfig) -> np.ndarray:
     industry_daily_mwh = _normalized_shape_mwh(industry_shape, INDUSTRY_FULL_TWH * demand.industry_pct / 100.0)
     hourly_mwh += _spread_across_day(industry_daily_mwh, INDUSTRY_HOURLY_SHAPE)
 
-    # Air conditioning: only May-September, mostly afternoon.
-    ac_shape = np.where((days >= AC_MONTH_START_DAY) & (days <= AC_MONTH_END_DAY), 1.0, 0.0)
+    # Air conditioning: modelled as a "cooling degree" response to a smooth
+    # annual temperature cycle rather than a hard on/off switch for a fixed
+    # block of months - real AC demand ramps up through spring, peaks in
+    # the hottest weeks of midsummer, and tapers off through autumn, with
+    # no demand at all once it's cool enough. Squaring the clipped cooling
+    # signal concentrates most of the demand into the hottest stretch
+    # (AC use rises faster than linearly with temperature) rather than
+    # spreading it evenly across the warm half of the year.
+    temperature_shape = _seasonal(days, peak_day=AC_TEMPERATURE_PEAK_DAY, mean=0.0, amplitude=1.0)
+    cooling_degree = np.clip(temperature_shape - AC_COOLING_THRESHOLD, 0.0, None)
+    ac_shape = cooling_degree**AC_COOLING_EXPONENT
     ac_daily_mwh = _normalized_shape_mwh(ac_shape, AC_FULL_TWH * demand.ac_pct / 100.0)
     hourly_mwh += _spread_across_day(ac_daily_mwh, AC_HOURLY_SHAPE)
 

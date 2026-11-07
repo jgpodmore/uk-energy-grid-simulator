@@ -1,6 +1,7 @@
 import sys
 from pathlib import Path
 
+import numpy as np
 import pytest
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
@@ -13,6 +14,7 @@ from app.defaults import (
 )
 from app.models import DemandConfig
 from app.simulation import (
+    AC_FULL_TWH,
     DAYS_PER_YEAR,
     HOURS_PER_DAY,
     BATTERY_DURATION_HOURS,
@@ -457,3 +459,44 @@ def test_ac_demand_only_in_summer():
 
     assert abs(winter_delta) < 1.0
     assert summer_delta > 1.0
+
+
+def test_ac_demand_ramps_smoothly_with_no_hard_month_boundary():
+    # Air conditioning used to switch on/off at fixed month boundaries
+    # (day 121 / day 273), producing a sudden jump in demand overnight.
+    # It should now ramp up and down smoothly - no single day's change
+    # should look like a step function turning a whole season on at once.
+    demand = DemandConfig(heat_pump_pct=0, ev_pct=0, industry_pct=0, ac_pct=100)
+    hourly_mwh = build_demand_mwh(demand)
+    daily_totals = hourly_mwh.sum(axis=1)
+
+    day_to_day_deltas = np.abs(np.diff(daily_totals))
+    assert day_to_day_deltas.max() < 0.05 * daily_totals.max()
+
+    # The old hard switch days should show no special discontinuity now.
+    old_start, old_end = 121, 273
+    assert day_to_day_deltas[old_start - 1] < 0.05 * daily_totals.max()
+    assert day_to_day_deltas[old_end - 1] < 0.05 * daily_totals.max()
+
+
+def test_ac_demand_peaks_in_midsummer_and_is_concentrated_there():
+    # Demand should be concentrated into the hottest weeks (super-linear
+    # response to heat) rather than spread evenly across a flat summer
+    # block - the peak day should carry much more than an early-ramp day.
+    demand = DemandConfig(heat_pump_pct=0, ev_pct=0, industry_pct=0, ac_pct=100)
+    baseline = DemandConfig(heat_pump_pct=0, ev_pct=0, industry_pct=0, ac_pct=0)
+    ac_daily_totals = build_demand_mwh(demand).sum(axis=1) - build_demand_mwh(baseline).sum(axis=1)
+
+    peak_day = int(np.argmax(ac_daily_totals))
+    assert 190 <= peak_day <= 215  # late July, consistent with AC_TEMPERATURE_PEAK_DAY
+
+    early_ramp_day = 135  # mid-May: should be a small fraction of the peak
+    assert ac_daily_totals[early_ramp_day] < 0.2 * ac_daily_totals[peak_day]
+
+
+def test_ac_annual_total_matches_target_adoption():
+    demand = DemandConfig(heat_pump_pct=0, ev_pct=0, industry_pct=0, ac_pct=100)
+    hourly_mwh = build_demand_mwh(demand)
+    baseline = build_demand_mwh(DemandConfig(heat_pump_pct=0, ev_pct=0, industry_pct=0, ac_pct=0))
+    ac_only_mwh = hourly_mwh.sum() - baseline.sum()
+    assert ac_only_mwh == pytest.approx(AC_FULL_TWH * 1_000_000.0, rel=1e-6)

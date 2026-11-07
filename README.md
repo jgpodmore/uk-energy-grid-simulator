@@ -80,7 +80,11 @@ periods total):
   and evening peak), plus four adjustable electrification levers each with
   their own intraday shape: heat pumps (winter-weighted, morning/evening
   heating ramps), EVs (mostly overnight charging), industry (a daytime shift
-  pattern), and air conditioning (May-September, afternoon-peaking).
+  pattern), and air conditioning, which instead of a fixed on/off summer
+  window tracks a smooth annual temperature cycle, ramping up through
+  spring, peaking in the hottest stretch of midsummer (late July), and
+  tapering off through autumn, concentrated into the hottest weeks rather
+  than spread evenly - and within each hot day, mostly afternoon.
 
 All figures (capacities, costs, capacity factors, demand growth) are
 illustrative approximations of the mid-2020s UK grid for an educational
