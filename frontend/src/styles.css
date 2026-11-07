@@ -212,6 +212,22 @@ h1 {
   margin: -12px 0 20px;
 }
 
+.share-btn {
+  border: 1px solid var(--card-border);
+  background: var(--surface);
+  color: var(--text-primary);
+  padding: 8px 14px;
+  border-radius: 8px;
+  font-size: 13px;
+  cursor: pointer;
+  margin: -12px 0 20px;
+  transition: background 0.15s, border-color 0.15s;
+}
+
+.share-btn:hover {
+  border-color: var(--accent);
+}
+
 .banner {
   padding: 12px 16px;
   border-radius: 8px;

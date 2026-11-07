@@ -55,6 +55,7 @@ def build_response(gen: GenerationConfig, demand: DemandConfig) -> dict:
     total_curtailment_payment = 0.0
     total_unmet = 0.0
     total_delivered_mwh = 0.0
+    days_with_shortfall = 0
 
     battery_capacity = battery_capacity_mwh_for(gen)
     other_capacity = other_storage_capacity_mwh_for(gen)
@@ -95,6 +96,9 @@ def build_response(gen: GenerationConfig, demand: DemandConfig) -> dict:
 
         delivered = sum(day_supply.values())
         carbon_intensity = (day_emissions_kg * 1000.0) / (delivered * 1000.0) if delivered > 0 else 0.0
+        day_unmet_rounded = round(day_unmet, 1)
+        if day_unmet_rounded > 0:
+            days_with_shortfall += 1
 
         daily.append(
             {
@@ -109,7 +113,7 @@ def build_response(gen: GenerationConfig, demand: DemandConfig) -> dict:
                 "curtailment_mwh": {k: round(v, 1) for k, v in day_curtailment.items() if v > 0},
                 "curtailment_total_mwh": round(day_curtailment_mwh, 1),
                 "curtailment_payment_gbp": round(day_curtailment_payment, 2),
-                "unmet_demand_mwh": round(day_unmet, 1),
+                "unmet_demand_mwh": day_unmet_rounded,
                 "carbon_intensity_gco2_per_kwh": round(carbon_intensity, 1),
                 "cost_gbp": round(day_cost, 2),
             }
@@ -156,6 +160,7 @@ def build_response(gen: GenerationConfig, demand: DemandConfig) -> dict:
         "total_curtailment_mwh": round(total_curtailment_mwh, 0),
         "total_curtailment_payment_gbp": round(total_curtailment_payment, 0),
         "total_unmet_demand_mwh": round(total_unmet, 1),
+        "days_with_shortfall": days_with_shortfall,
         "reliability_ok": bool(total_unmet < 1.0),
         "offshore_wind_distribution_cost_per_mwh": round(prices["wind_offshore_distribution"], 2),
         "offshore_wind_base_price_per_mwh": round(prices["wind_offshore_base"], 2),

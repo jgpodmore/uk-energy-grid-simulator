@@ -104,6 +104,7 @@ export interface Headline {
   total_curtailment_mwh: number;
   total_curtailment_payment_gbp: number;
   total_unmet_demand_mwh: number;
+  days_with_shortfall: number;
   reliability_ok: boolean;
   offshore_wind_distribution_cost_per_mwh: number;
   offshore_wind_base_price_per_mwh: number;
