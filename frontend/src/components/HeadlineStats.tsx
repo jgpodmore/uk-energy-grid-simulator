@@ -12,8 +12,9 @@ export default function HeadlineStats({ headline }: { headline: Headline }) {
         <div className="banner critical">
           <strong>⚠ Demand not met.</strong>
           <span>
-            This mix falls short of demand for {fmtNumber(headline.total_unmet_demand_mwh / 1000, 1)} GWh across the
-            year — add more dispatchable generation, storage, or interconnector capacity.
+            This mix falls short of demand for {fmtNumber(headline.total_unmet_demand_mwh / 1000, 1)} GWh across{" "}
+            {headline.days_with_shortfall} day{headline.days_with_shortfall === 1 ? "" : "s"} of the year — add more
+            dispatchable generation, storage, or interconnector capacity.
           </span>
         </div>
       )}

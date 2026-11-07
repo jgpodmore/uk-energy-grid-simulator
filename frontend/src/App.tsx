@@ -8,6 +8,7 @@ import GenerationPanel from "./components/GenerationPanel";
 import HeadlineStats from "./components/HeadlineStats";
 import MixBar from "./components/MixBar";
 import PresetBar from "./components/PresetBar";
+import ShareResultsButton from "./components/ShareResultsButton";
 import ShortfallChart from "./components/ShortfallChart";
 import SupplyChart from "./components/SupplyChart";
 import type { DefaultsResponse, DemandConfig, GenerationConfig, PresetsResponse, SimulationResponse } from "./types";
@@ -130,6 +131,7 @@ export default function App() {
         {result && (
           <>
             <HeadlineStats headline={result.headline} />
+            <ShareResultsButton headline={result.headline} />
             <MixBar headline={result.headline} />
             <DemandChart daily={result.daily} />
             <SupplyChart daily={result.daily} />

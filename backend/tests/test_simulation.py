@@ -60,6 +60,7 @@ def test_default_mix_meets_demand():
     response = build_response(DEFAULT_GENERATION, DEFAULT_DEMAND)
     assert response["headline"]["reliability_ok"] is True
     assert response["headline"]["total_unmet_demand_mwh"] < 1.0
+    assert response["headline"]["days_with_shortfall"] == 0
 
 
 def test_solar_zero_at_night():
@@ -100,6 +101,33 @@ def test_zero_capacity_everything_gives_full_unmet_demand():
     response = build_response(zero_gen, DEFAULT_DEMAND)
     assert response["headline"]["reliability_ok"] is False
     assert response["headline"]["total_unmet_demand_mwh"] > 0
+    # With literally no generation at all, every single day is short.
+    assert response["headline"]["days_with_shortfall"] == DAYS_PER_YEAR
+
+
+def test_days_with_shortfall_matches_daily_records_exactly():
+    # headline.days_with_shortfall should always equal the number of daily
+    # records that themselves report a nonzero unmet_demand_mwh - checked
+    # across a range of scenarios (none/some/all days short) rather than
+    # hardcoding an expected count for any one of them.
+    zero_gen = DEFAULT_GENERATION.model_copy(deep=True)
+    for field_name in type(zero_gen).model_fields:
+        if field_name.endswith("_gw"):
+            setattr(zero_gen, field_name, 0.0)
+    # Nuclear alone, sized between the lowest and highest daily demand peak
+    # across the year, covers the lower-peak (summer) days but falls short
+    # on the higher-peak (winter) days - a scenario with some, but not all,
+    # days short.
+    partial_gen = zero_gen.model_copy(update={"nuclear_gw": 44.44})
+
+    for gen in (DEFAULT_GENERATION, zero_gen, partial_gen):
+        response = build_response(gen, DEFAULT_DEMAND)
+        expected = sum(1 for day in response["daily"] if day["unmet_demand_mwh"] > 0)
+        assert response["headline"]["days_with_shortfall"] == expected
+
+    # Sanity check the "some" case is genuinely in between, not secretly 0 or 365.
+    partial_response = build_response(partial_gen, DEFAULT_DEMAND)
+    assert 0 < partial_response["headline"]["days_with_shortfall"] < DAYS_PER_YEAR
 
 
 def test_presets_run_without_error():
