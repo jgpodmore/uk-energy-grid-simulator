@@ -40,6 +40,16 @@ body,
   height: 100%;
 }
 
+html {
+  scroll-behavior: smooth;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  html {
+    scroll-behavior: auto;
+  }
+}
+
 body {
   margin: 0;
   font-family: system-ui, -apple-system, "Segoe UI", sans-serif;
@@ -67,6 +77,40 @@ body {
   max-height: 100vh;
   position: sticky;
   top: 0;
+}
+
+/* Only shown on the narrow/stacked mobile layout below - on desktop the
+   sidebar and results are already both visible side by side, so a jump
+   link would just be clutter. */
+.jump-link {
+  display: none;
+  font-size: 13px;
+  color: var(--accent);
+  text-decoration: none;
+  margin-bottom: 16px;
+}
+
+.jump-link:hover {
+  text-decoration: underline;
+}
+
+@media (max-width: 900px) {
+  /* On a single-column layout the sidebar and main content stack in normal
+     document flow instead of sitting side by side, so the sticky/clipped
+     desktop sidebar (pinned to the viewport, independently scrollable) no
+     longer makes sense - without this override it stays stuck in place as
+     the page scrolls and the charts end up rendered underneath it. */
+  .sidebar {
+    position: static;
+    max-height: none;
+    overflow-y: visible;
+    border-right: none;
+    border-bottom: 1px solid var(--card-border);
+  }
+
+  .jump-link {
+    display: inline-block;
+  }
 }
 
 .main {

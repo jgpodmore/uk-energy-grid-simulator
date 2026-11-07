@@ -96,12 +96,15 @@ export default function App() {
 
   return (
     <div className="app-shell">
-      <aside className="sidebar">
+      <aside className="sidebar" id="sliders">
         <h1>UK Energy Grid Simulator</h1>
         <p className="subtitle">
           Adjust how much generation comes from each source, and how much each costs, to see whether the mix would
           meet demand across a full year - and what it would cost.
         </p>
+        <a href="#results" className="jump-link">
+          ↓ Jump to results and graphs
+        </a>
         <GenerationPanel
           generation={generation}
           meta={defaults.generation_meta}
@@ -112,7 +115,10 @@ export default function App() {
         <DemandPanel demand={demand} meta={defaults.demand_meta} onChange={updateDemand} />
       </aside>
 
-      <main className="main">
+      <main className="main" id="results">
+        <a href="#sliders" className="jump-link">
+          ↑ Back to sliders
+        </a>
         <PresetBar presets={presets} activePreset={activePreset} onSelect={selectPreset} />
         {loading && <div className="loading-veil">Simulating…</div>}
         {error && (
