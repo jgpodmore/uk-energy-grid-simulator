@@ -28,7 +28,9 @@ from app.simulation import (
     UK_FLEET_ENERGY_MWH_AT_FULL_ELECTRIFICATION,
     V2G_DURATION_HOURS,
     V2G_EFFICIENCY,
+    ac_latitude_multiplier,
     build_demand_mwh,
+    heating_latitude_multiplier,
     run_simulation,
     solar_capacity_factor_profile,
     solar_hourly_capacity_factor_profile,
@@ -300,6 +302,92 @@ def test_solar_latitude_toggle_boosts_delivered_solar_generation():
     # Same installed GW, but more delivered solar share at the sunnier latitude.
     assert solar_houston > solar_uk
     assert response_houston["headline"]["reliability_ok"] is True
+
+
+def test_latitude_multipliers_are_one_at_actual_uk_latitude():
+    assert heating_latitude_multiplier(UK_ACTUAL_LATITUDE_DEG) == pytest.approx(1.0, abs=1e-9)
+    assert ac_latitude_multiplier(UK_ACTUAL_LATITUDE_DEG) == pytest.approx(1.0, abs=1e-9)
+
+
+def test_lower_latitude_reduces_heating_and_increases_ac_multiplier():
+    uk_heat = heating_latitude_multiplier(UK_ACTUAL_LATITUDE_DEG)
+    madrid_heat = heating_latitude_multiplier(MADRID_NEW_YORK_LATITUDE_DEG)
+    houston_heat = heating_latitude_multiplier(HOUSTON_LATITUDE_DEG)
+    # Milder winters at lower latitudes -> monotonically less heating needed.
+    assert uk_heat > madrid_heat > houston_heat > 0
+
+    uk_ac = ac_latitude_multiplier(UK_ACTUAL_LATITUDE_DEG)
+    madrid_ac = ac_latitude_multiplier(MADRID_NEW_YORK_LATITUDE_DEG)
+    houston_ac = ac_latitude_multiplier(HOUSTON_LATITUDE_DEG)
+    # Hotter summers at lower latitudes -> monotonically more AC needed.
+    assert uk_ac < madrid_ac < houston_ac
+    assert houston_ac == pytest.approx(3.0, abs=0.05)
+
+
+def test_build_demand_mwh_latitude_only_affects_heating_and_ac():
+    demand = DemandConfig(heat_pump_pct=50, ev_pct=50, industry_pct=50, ac_pct=50)
+    uk_hourly = build_demand_mwh(demand, UK_ACTUAL_LATITUDE_DEG)
+    houston_hourly = build_demand_mwh(demand, HOUSTON_LATITUDE_DEG)
+
+    # Latitude changes the total (heating down, AC up at a lower latitude).
+    assert not np.allclose(uk_hourly, houston_hourly)
+
+    # Isolate each lever by zeroing out the other three - base/EV/industry
+    # totals must be identical regardless of latitude; only heat pump and AC
+    # should move.
+    heat_only = DemandConfig(heat_pump_pct=100, ev_pct=0, industry_pct=0, ac_pct=0)
+    ev_only = DemandConfig(heat_pump_pct=0, ev_pct=100, industry_pct=0, ac_pct=0)
+    industry_only = DemandConfig(heat_pump_pct=0, ev_pct=0, industry_pct=100, ac_pct=0)
+    ac_only = DemandConfig(heat_pump_pct=0, ev_pct=0, industry_pct=0, ac_pct=100)
+    zero = DemandConfig(heat_pump_pct=0, ev_pct=0, industry_pct=0, ac_pct=0)
+    base_uk = build_demand_mwh(zero, UK_ACTUAL_LATITUDE_DEG).sum()
+    base_houston = build_demand_mwh(zero, HOUSTON_LATITUDE_DEG).sum()
+    assert base_uk == pytest.approx(base_houston, rel=1e-9)
+
+    ev_uk = build_demand_mwh(ev_only, UK_ACTUAL_LATITUDE_DEG).sum() - base_uk
+    ev_houston = build_demand_mwh(ev_only, HOUSTON_LATITUDE_DEG).sum() - base_houston
+    assert ev_uk == pytest.approx(ev_houston, rel=1e-9)
+
+    industry_uk = build_demand_mwh(industry_only, UK_ACTUAL_LATITUDE_DEG).sum() - base_uk
+    industry_houston = build_demand_mwh(industry_only, HOUSTON_LATITUDE_DEG).sum() - base_houston
+    assert industry_uk == pytest.approx(industry_houston, rel=1e-9)
+
+    heat_uk = build_demand_mwh(heat_only, UK_ACTUAL_LATITUDE_DEG).sum() - base_uk
+    heat_houston = build_demand_mwh(heat_only, HOUSTON_LATITUDE_DEG).sum() - base_houston
+    assert heat_houston < heat_uk
+    assert heat_houston == pytest.approx(heat_uk * heating_latitude_multiplier(HOUSTON_LATITUDE_DEG), rel=1e-6)
+
+    ac_uk = build_demand_mwh(ac_only, UK_ACTUAL_LATITUDE_DEG).sum() - base_uk
+    ac_houston = build_demand_mwh(ac_only, HOUSTON_LATITUDE_DEG).sum() - base_houston
+    assert ac_houston > ac_uk
+    assert ac_houston == pytest.approx(ac_uk * ac_latitude_multiplier(HOUSTON_LATITUDE_DEG), rel=1e-6)
+
+
+def test_build_demand_mwh_defaults_to_uk_latitude_as_a_no_op():
+    demand = DemandConfig(heat_pump_pct=40, ev_pct=40, industry_pct=40, ac_pct=40)
+    assert np.array_equal(build_demand_mwh(demand), build_demand_mwh(demand, UK_ACTUAL_LATITUDE_DEG))
+
+
+def test_headline_exposes_heating_and_ac_latitude_multipliers():
+    gen_houston = DEFAULT_GENERATION.model_copy(update={"solar_latitude_deg": HOUSTON_LATITUDE_DEG})
+    response = build_response(gen_houston, DEFAULT_DEMAND)
+    headline = response["headline"]
+    assert headline["heating_latitude_multiplier"] == pytest.approx(heating_latitude_multiplier(HOUSTON_LATITUDE_DEG), abs=1e-3)
+    assert headline["ac_latitude_multiplier"] == pytest.approx(ac_latitude_multiplier(HOUSTON_LATITUDE_DEG), abs=1e-3)
+
+
+def test_houston_latitude_shifts_demand_toward_ac_and_away_from_heating():
+    # AC-only: Houston's 3x AC multiplier should mean strictly more demand.
+    ac_only = DemandConfig(heat_pump_pct=0, ev_pct=0, industry_pct=0, ac_pct=100)
+    ac_uk_total = build_demand_mwh(ac_only, UK_ACTUAL_LATITUDE_DEG).sum()
+    ac_houston_total = build_demand_mwh(ac_only, HOUSTON_LATITUDE_DEG).sum()
+    assert ac_houston_total > ac_uk_total
+
+    # Heating-only: Houston's much milder winters should mean strictly less demand.
+    heat_only = DemandConfig(heat_pump_pct=100, ev_pct=0, industry_pct=0, ac_pct=0)
+    heat_uk_total = build_demand_mwh(heat_only, UK_ACTUAL_LATITUDE_DEG).sum()
+    heat_houston_total = build_demand_mwh(heat_only, HOUSTON_LATITUDE_DEG).sum()
+    assert heat_houston_total < heat_uk_total
 
 
 def test_v2g_capacity_scales_with_ev_adoption_and_participation():

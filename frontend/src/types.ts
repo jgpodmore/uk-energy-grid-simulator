@@ -110,6 +110,8 @@ export interface Headline {
   gas_electricity_price_per_mwh: number;
   solar_latitude_deg: number;
   solar_latitude_multiplier: number;
+  heating_latitude_multiplier: number;
+  ac_latitude_multiplier: number;
   v2g_capacity_gwh: number;
   v2g_power_gw: number;
   equivalents: {

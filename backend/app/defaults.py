@@ -196,7 +196,7 @@ GENERATION_SLIDER_META = {
     "solar_field_price": {"min": 10, "max": 150, "step": 1, "unit": "£/MWh"},
     "solar_roof_gw": {"min": 0, "max": 30, "step": 0.5, "unit": "GW", "cap_note": "Capped at estimated UK usable roof area"},
     "solar_roof_price": {"min": 10, "max": 200, "step": 1, "unit": "£/MWh"},
-    "solar_latitude_deg": {"min": 25, "max": 62, "step": 0.5, "unit": "°N", "note": "Toggle to compare solar output at a sunnier latitude"},
+    "solar_latitude_deg": {"min": 25, "max": 62, "step": 0.5, "unit": "°N", "note": "Toggle to compare solar output, heating demand, and AC demand at a sunnier latitude"},
     "nuclear_gw": {"min": 0, "max": 100, "step": 0.5, "unit": "GW"},
     "nuclear_price": {"min": 30, "max": 220, "step": 1, "unit": "£/MWh"},
     "wind_onshore_gw": {"min": 0, "max": 50, "step": 0.5, "unit": "GW"},
@@ -238,10 +238,10 @@ GENERATION_SLIDER_META = {
 }
 
 DEMAND_SLIDER_META = {
-    "heat_pump_pct": {"min": 0, "max": 100, "step": 1, "unit": "%", "note": "% of boilers replaced with heat pumps, beyond today"},
+    "heat_pump_pct": {"min": 0, "max": 100, "step": 1, "unit": "%", "note": "% of boilers replaced with heat pumps, beyond today (scaled by the solar latitude toggle - milder winters need less heating)"},
     "ev_pct": {"min": 0, "max": 100, "step": 1, "unit": "%", "note": "% of road transport electrified, beyond today"},
     "industry_pct": {"min": 0, "max": 100, "step": 1, "unit": "%", "note": "% of industrial heat/process electrified, beyond today"},
-    "ac_pct": {"min": 0, "max": 100, "step": 1, "unit": "%", "note": "% household air-conditioning adoption (demand tracks a smooth summer temperature curve, peaking in late July)"},
+    "ac_pct": {"min": 0, "max": 100, "step": 1, "unit": "%", "note": "% household air-conditioning adoption (demand tracks a smooth summer temperature curve, peaking in late July; also scaled by the solar latitude toggle - hotter summers need more AC)"},
 }
 
 # Real-world equivalents used to translate GW into tangible units
