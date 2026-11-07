@@ -1,9 +1,11 @@
 from __future__ import annotations
 
 import os
+from pathlib import Path
 
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.staticfiles import StaticFiles
 
 from .aggregate import build_response
 from .defaults import (
@@ -72,3 +74,23 @@ def simulate(request: SimulationRequest):
 @app.get("/api/health")
 def health():
     return {"status": "ok"}
+
+
+def _frontend_dist_dir() -> Path:
+    """Where the built frontend (frontend/dist) lives, for single-service
+    deployments where this backend also serves the UI. Defaults to the
+    sibling frontend/dist of this repo checkout (so `npm run build` then
+    `uvicorn` from a plain clone "just works"); override with
+    FRONTEND_DIST_DIR for deployments that copy the build elsewhere (e.g.
+    the Dockerfile, which copies it to /app/frontend_dist).
+    """
+    default = Path(__file__).resolve().parents[2] / "frontend" / "dist"
+    return Path(os.environ.get("FRONTEND_DIST_DIR", default))
+
+
+_frontend_dist = _frontend_dist_dir()
+if _frontend_dist.is_dir():
+    # Mounted last so it never shadows the /api/* routes above - FastAPI
+    # matches routes in registration order, and StaticFiles only handles
+    # whatever didn't already match an explicit route.
+    app.mount("/", StaticFiles(directory=str(_frontend_dist), html=True), name="frontend")

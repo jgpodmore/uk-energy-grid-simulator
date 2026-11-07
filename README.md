@@ -144,6 +144,42 @@ reachable at `/api`.
 
 ## Deploying
 
+### Single service (simplest - recommended for a free/low-cost deploy)
+
+The backend can serve the built frontend itself, so the whole app runs as
+one process behind one URL - no reverse proxy or CORS configuration needed.
+
+```bash
+cd frontend && npm install && npm run build
+cd ../backend && uvicorn app.main:app --host 0.0.0.0 --port 8000 --workers 4
+```
+
+At startup, the backend looks for a built frontend at `frontend/dist`
+(relative to the repo root) and, if found, serves it at `/` alongside the
+API at `/api/*`. Set `FRONTEND_DIST_DIR` to point somewhere else if your
+deployment copies the build to a different path (the included `Dockerfile`
+does this). If no build is found, the backend just serves the API, exactly
+as before - this is a no-op for local development with `npm run dev`.
+
+A multi-stage `Dockerfile` is included at the repo root that builds the
+frontend and bundles it with the backend into a single image:
+
+```bash
+docker build -t uk-energy-grid-simulator .
+docker run -p 8000:8000 uk-energy-grid-simulator
+```
+
+This is the easiest way to deploy for free on a platform like
+[Render](https://render.com) (Web Service → connect your fork → Render
+detects the `Dockerfile` automatically → pick the free instance type) or
+similar Docker-based hosts (Fly.io, Railway, etc.) - one service, one free
+instance slot, no proxy or CORS setup to get right.
+
+### Separate frontend/backend services
+
+If you'd rather deploy the frontend (e.g. to a CDN/static host) and backend
+separately:
+
 ```bash
 cd backend
 uvicorn app.main:app --host 0.0.0.0 --port 8000 --workers 4
@@ -154,7 +190,7 @@ meant for local development only. Pick a worker count suited to the host
 (the simulation itself is cheap - a few hundred milliseconds per request - so
 this is about handling concurrent requests, not CPU-bound work per request).
 
-Two things worth setting explicitly for a public deployment:
+Two things worth setting explicitly in this mode:
 
 - **CORS**: the API allows all origins (`*`) by default, since there's no
   auth or user data here - just a stateless calculator. Set the
@@ -163,7 +199,7 @@ Two things worth setting explicitly for a public deployment:
   call it from a browser.
 - **Reverse proxy**: the frontend calls the backend at the relative path
   `/api`, which only works if your deployment routes that path to the
-  backend (e.g. an nginx `location /api { proxy_pass ... }` block, or a
-  platform's built-in path-based routing). If frontend and backend are
-  deployed to entirely separate origins without such a proxy, requests to
-  `/api/*` will 404.
+  backend (e.g. an nginx `location /api { proxy_pass ... }` block, a static
+  host's rewrite/redirect rules, or a platform's built-in path-based
+  routing). If frontend and backend are deployed to entirely separate
+  origins without such a proxy, requests to `/api/*` will 404.
