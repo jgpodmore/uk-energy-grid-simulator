@@ -241,7 +241,7 @@ DEMAND_SLIDER_META = {
     "heat_pump_pct": {"min": 0, "max": 100, "step": 1, "unit": "%", "note": "% of boilers replaced with heat pumps, beyond today"},
     "ev_pct": {"min": 0, "max": 100, "step": 1, "unit": "%", "note": "% of road transport electrified, beyond today"},
     "industry_pct": {"min": 0, "max": 100, "step": 1, "unit": "%", "note": "% of industrial heat/process electrified, beyond today"},
-    "ac_pct": {"min": 0, "max": 100, "step": 1, "unit": "%", "note": "% household air-conditioning adoption (adds demand May-Sep only)"},
+    "ac_pct": {"min": 0, "max": 100, "step": 1, "unit": "%", "note": "% household air-conditioning adoption (demand tracks a smooth summer temperature curve, peaking in late July)"},
 }
 
 # Real-world equivalents used to translate GW into tangible units
