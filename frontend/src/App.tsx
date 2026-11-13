@@ -8,9 +8,10 @@ import GenerationPanel from "./components/GenerationPanel";
 import HeadlineStats from "./components/HeadlineStats";
 import MixBar from "./components/MixBar";
 import PresetBar from "./components/PresetBar";
-import ShareResultsButton from "./components/ShareResultsButton";
+import ShareButton from "./components/ShareButton";
 import ShortfallChart from "./components/ShortfallChart";
 import SupplyChart from "./components/SupplyChart";
+import { buildFullShareText, buildHeadlineShareText } from "./shareText";
 import type { DefaultsResponse, DemandConfig, GenerationConfig, PresetsResponse, SimulationResponse } from "./types";
 
 export default function App() {
@@ -131,7 +132,15 @@ export default function App() {
         {result && (
           <>
             <HeadlineStats headline={result.headline} />
-            <ShareResultsButton headline={result.headline} />
+            <div className="share-bar">
+              <ShareButton label="Share headline figures" buildText={() => buildHeadlineShareText(result.headline)} />
+              <ShareButton
+                label="Share full results including inputs"
+                buildText={() =>
+                  buildFullShareText(result.headline, generation, demand, defaults.generation_meta, defaults.demand_meta)
+                }
+              />
+            </div>
             <MixBar headline={result.headline} />
             <DemandChart daily={result.daily} />
             <SupplyChart daily={result.daily} />
