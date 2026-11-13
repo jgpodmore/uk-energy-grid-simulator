@@ -212,6 +212,13 @@ h1 {
   margin: -12px 0 20px;
 }
 
+.share-bar {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin: 18px 0 22px;
+}
+
 .share-btn {
   border: 1px solid var(--card-border);
   background: var(--surface);
@@ -220,7 +227,6 @@ h1 {
   border-radius: 8px;
   font-size: 13px;
   cursor: pointer;
-  margin: 18px 0 22px;
   transition: background 0.15s, border-color 0.15s;
 }
 
